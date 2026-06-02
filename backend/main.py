@@ -714,6 +714,7 @@ def _warmup_feeds():
             print(f"[워밍업] {market.upper()} 피드 캐시 갱신 완료")
         except Exception as e:
             print(f"[워밍업 에러] {market}: {e}")
+        time.sleep(30)  # KR/US 사이 Groq 속도 제한 방지
 
 def _background_schedule_loop():
     time.sleep(2)
@@ -962,7 +963,8 @@ def _analyze_with_groq(titles_text: str, schedule_text: str, market: str = "kr")
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "rate" in err_str.lower():
-                print(f"[Groq:{model}] 속도 제한 → 다음 모델 시도")
+                print(f"[Groq:{model}] 속도 제한 → 20초 후 재시도")
+                time.sleep(20)
                 continue
             print(f"[Groq 분석 에러] {e}")
             return None

@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import feedparser
 import yfinance as yf
 import anthropic
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from urllib.parse import quote
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
@@ -197,6 +197,12 @@ status 판단 기준:
 - "확정": 날짜·장소·상대방이 명확히 확인된 경우
 - "유력": 논의 중이거나 유력하게 거론되는 경우
 - "검토중": 추진 중이거나 검토 단계인 경우
+- "미정": 회동·방문이 언급되지만 날짜가 전혀 확인되지 않은 경우
+
+⚠️ 날짜 미정 일정 처리 규칙:
+- 뉴스에서 특정 기업과의 회동·방문이 언급되지만 날짜가 확인되지 않은 경우,
+  date를 "미정"으로 설정하고 dayLabel을 "미정"으로 설정해. 절대 생략하지 마.
+- 예: "삼성전자와 회동 검토 중" → date: "미정", status: "검토중"
 
 한국 주요 종목코드 참고:
 삼성전자(005930), SK하이닉스(000660), SK스퀘어(034730), LG전자(066570), LG(003550),
@@ -209,10 +215,10 @@ status 판단 기준:
 
 [
   {
-    "date": "YYYY-MM-DD",
-    "dayLabel": "월화수목금토일 중 하나",
+    "date": "YYYY-MM-DD 또는 날짜 미확정 시 '미정'",
+    "dayLabel": "월화수목금토일 중 하나. 날짜 미확정 시 '미정'",
     "event": "이벤트 내용 (간결하게 20자 이내)",
-    "status": "확정 또는 유력 또는 검토중",
+    "status": "확정 또는 유력 또는 검토중 또는 미정",
     "relatedCodes": ["종목코드"],
     "relatedNames": ["기업명"],
     "sourceIdx": 해당 일정을 추출한 뉴스의 번호(1부터 시작). 여러 뉴스면 가장 직접적인 것 1개만. 없으면 0
@@ -261,6 +267,19 @@ D-Day(D-숫자, D-DAY, D+숫자)는 절대 직접 계산하거나 추정해서 �
 
 목록에 없는 종목이라도, 뉴스 본문에서 엔비디아·젠슨 황과 직접적으로 연관된 국내 수혜주로 명확히 언급된 경우에는 code를 "search"로 설정하고 name에 정확한 기업명을 입력해서 포함해줘.
 단, 뉴스에서 직접 언급되지 않은 종목이나 확신이 없는 종목은 절대 추가하지 마.
+
+⚠️ 가짜 종목 추출 절대 금지 규칙:
+- "인공지능", "한국", "AI", "반도체", "데이터" 같은 일반 명사는 절대 종목명으로 추출하지 마.
+- "삼성동", "판교" 등 지명을 기업명으로 오인하지 마.
+- name 필드에는 반드시 대한민국 코스피·코스닥에 실제로 상장된 회사의 정확한 공식 명칭만 입력해.
+- 회사 이름이 맞더라도 해당 종목이 뉴스에서 명시적으로 수혜주로 언급되지 않았다면 절대 추가 금지.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━ 종목 다양성 규칙 ━━━
+전체 분석 결과에서 동일 종목이 반복 노출되지 않도록 배분해줘.
+특정 종목(예: LG전자, 삼성전자 등)이 여러 기사에 걸쳐 반복 등장하더라도,
+해당 종목은 파급력(impactScore)이 가장 높은 기사 1개에만 포함하고 나머지 기사의 stocks에서는 제외해줘.
+다양한 종목들이 전체 items에 고르게 분포되도록 해줘.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ━━━ investment_status 판단 기준 ━━━
@@ -327,6 +346,18 @@ Nvidia 단독 기사가 여러 개 있더라도, 최종 분석에서 특정 기�
 
 목록에 없는 종목이라도, 뉴스 본문에서 엔비디아 생태계와 직접적으로 연관된 수혜주로 명확히 언급된 경우에는 code를 "search"로 설정하고 name에 정확한 기업명(영어)을 입력해서 포함해줘.
 단, 뉴스에서 직접 언급되지 않은 종목이나 확신이 없는 종목은 절대 추가하지 마.
+
+⚠️ 가짜 종목 추출 절대 금지 규칙:
+- "AI", "artificial intelligence", "semiconductor", "data center" 같은 일반 명사·산업 용어는 절대 종목명으로 추출하지 마.
+- 도시명, 국가명, 기관명(정부·연구소·대학)을 기업명으로 오인하지 마.
+- name 필드에는 반드시 미국 NYSE·NASDAQ에 실제로 상장된 회사의 정확한 공식 영문 명칭만 입력해.
+- 회사 이름이 맞더라도 해당 종목이 뉴스에서 명시적으로 수혜주로 언급되지 않았다면 절대 추가 금지.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━ Stock Diversity Rule ━━━
+Do NOT repeat the same ticker across multiple news items.
+If a ticker (e.g., NVDA, MSFT) appears in several articles, include it only in the single article with the highest impactScore.
+Spread different tickers across different items so investors see a variety of opportunities.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ━━━ investment_status 판단 기준 ━━━
@@ -388,6 +419,61 @@ FEEDS_TTL = 600
 ANALYSIS_TTL = 3600
 STOCK_TTL = 60
 DAILY_WEATHER_TTL = 10800  # 3시간 — 총합 날씨 최소 고정 시간
+
+KST = timezone(timedelta(hours=9))
+
+
+def _get_news_cutoff(market: str) -> tuple[float, float, str]:
+    """KST 기준 시장별 뉴스 수집 기준 시각(UTC epoch) 반환.
+    Returns: (primary_cutoff, fallback_cutoff, label)
+    primary_cutoff: 이 시각 이후 발행된 기사만 1차 수집
+    fallback_cutoff: 1차 결과 < 5개 시 확대 기준
+    """
+    now = datetime.now(KST)
+    weekday = now.weekday()  # 0=Mon, 6=Sun
+
+    def _kst(*args) -> float:
+        """KST datetime → UTC epoch"""
+        return datetime(*args, tzinfo=KST).timestamp()
+
+    if market == "kr":
+        # 월요일 또는 주말(토·일) → 72h
+        if weekday == 0 or weekday >= 5:
+            cutoff = (now - timedelta(hours=72)).timestamp()
+            return cutoff, cutoff, "72h(주말/월)"
+
+        y, mo, d = now.year, now.month, now.day
+
+        # 화~금 09:00 전 → 어제 15:30 이후 (장 마감 후 호재 포함)
+        if now.hour < 9:
+            primary = _kst(y, mo, d - 1, 15, 30) if d > 1 else (now - timedelta(hours=18)).timestamp()
+            fallback = (now - timedelta(hours=72)).timestamp()
+            return primary, fallback, "전일마감후(~어제15:30)"
+
+        # 화~금 09:00 이후 → 당일 00:00 이후 (어제 기사 전부 차단)
+        primary = _kst(y, mo, d, 0, 0)
+        fallback = _kst(y, mo, d - 1, 15, 30) if d > 1 else (now - timedelta(hours=18)).timestamp()
+        return primary, fallback, "당일실시간(00:00~)"
+
+    else:  # us
+        # 월요일 → 72h
+        if weekday == 0:
+            cutoff = (now - timedelta(hours=72)).timestamp()
+            return cutoff, cutoff, "72h(월)"
+
+        hour_min = now.hour * 60 + now.minute
+
+        # KST 22:30 이후(미장 개장) 또는 익일 05:00 전 → 6h 실시간
+        if hour_min >= 22 * 60 + 30 or hour_min < 5 * 60:
+            primary = (now - timedelta(hours=6)).timestamp()
+            fallback = (now - timedelta(hours=24)).timestamp()
+            return primary, fallback, "6h(미장실시간)"
+
+        # KST 주간(05:00~22:30) → 당일 00:00 이후
+        y, mo, d = now.year, now.month, now.day
+        primary = _kst(y, mo, d, 0, 0)
+        fallback = (now - timedelta(hours=48)).timestamp()
+        return primary, fallback, "당일실시간(00:00~)"
 
 # 마켓별 하루 총합 날씨 스토어 (EMA 누적)
 _daily_weather: dict = {
@@ -482,7 +568,7 @@ def _dday_label(event_date_str: str) -> tuple[str, int]:
     try:
         diff = (date.fromisoformat(event_date_str) - today).days
     except ValueError:
-        return ("?", 999)
+        return ("미정", 999)
     if diff < 0:
         return (f"D+{abs(diff)}", diff)
     if diff == 0:
@@ -497,7 +583,7 @@ def enrich_schedule(items: list[dict]) -> list[dict]:
         if num < 0:
             continue  # 과거 날짜 제거
         result.append({**s, "dDay": label, "dDayNum": num})
-    return sorted(result, key=lambda x: x["date"])
+    return sorted(result, key=lambda x: (x["date"] == "미정", x["date"]))
 
 
 def build_schedule_context() -> str:
@@ -609,20 +695,41 @@ def _background_schedule_loop():
 
 # ── 뉴스 수집 & 분석 ────────────────────────────────────────────────────
 
-def get_jensen_news(max_age: int = 86400) -> list[dict]:
-    """max_age: 수집 기간(초). 기본 24h=86400, 확장 3일=259200"""
-    query = quote(
-        "(젠슨황 OR 엔비디아 OR Nvidia OR Jensen Huang) AND "
-        "(방한 OR 한국 OR 삼성 OR 하이닉스 OR LG OR 현대차 OR "
-        "공급 OR 테스트 OR 밸류체인 OR 관련주 OR 수혜 OR HBM OR 협력 OR 네이버 OR 두산)"
-    )
-    rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
-    feed = feedparser.parse(rss_url)
-    now = time.time()
+_KST = timezone(timedelta(hours=9))
 
+
+def _pub_ts_utc(entry) -> float:
+    """feedparser entry의 발행 시각을 UTC epoch(float)로 변환."""
+    import calendar
+    parsed = entry.get("published_parsed")
+    if parsed:
+        return float(calendar.timegm(parsed))
+    return 0.0
+
+
+def _today_kst() -> date:
+    """현재 한국 시간 기준 오늘 날짜(date)"""
+    return datetime.now(_KST).date()
+
+
+def _pub_date_kst(entry) -> date | None:
+    """feedparser entry의 발행 날짜를 KST 기준 date로 반환"""
+    ts = _pub_ts_utc(entry)
+    if ts == 0.0:
+        return None
+    return datetime.fromtimestamp(ts, tz=_KST).date()
+
+
+_KR_QUERY_BUCKETS = [
+    "(젠슨황 OR 엔비디아 OR Jensen Huang) AND (방한 OR 한국 OR 삼성 OR 하이닉스 OR LG OR 현대차 OR 네이버 OR 두산)",
+    "(엔비디아 OR Nvidia) AND (수혜 OR 관련주 OR 밸류체인 OR HBM OR 협력 OR 공급 OR 로봇 OR AI반도체)",
+]
+
+
+def get_jensen_news(cutoff: float = 0.0) -> list[dict]:
+    """cutoff(UTC epoch) 이후 발행된 국장 뉴스 멀티버킷 수집."""
     def entry_to_dict(entry) -> dict:
-        parsed = entry.get("published_parsed")
-        pub_ts = time.mktime(parsed) if parsed else 0.0
+        pub_ts = _pub_ts_utc(entry)
         return {
             "title": entry.get("title", ""),
             "link": entry.get("link", ""),
@@ -630,11 +737,25 @@ def get_jensen_news(max_age: int = 86400) -> list[dict]:
             "pubTs": pub_ts,
         }
 
-    result = [entry_to_dict(e) for e in feed.entries[:30]
-              if time.mktime(e.get("published_parsed") or time.gmtime(0)) >= now - max_age]
+    seen: set[str] = set()
+    result: list[dict] = []
+    for raw_q in _KR_QUERY_BUCKETS:
+        rss_url = f"https://news.google.com/rss/search?q={quote(raw_q)}&hl=ko&gl=KR&ceid=KR:ko"
+        try:
+            feed = feedparser.parse(rss_url)
+        except Exception:
+            continue
+        for e in feed.entries[:30]:
+            if _pub_ts_utc(e) < cutoff:
+                continue
+            key = e.get("title", "")[:50].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(entry_to_dict(e))
 
-    label = f"{max_age // 3600}h"
-    print(f"[뉴스 수집] {label} 필터 후 {len(result)}개")
+    result.sort(key=lambda x: -x["pubTs"])
+    print(f"[국장뉴스] cutoff 필터 후 {len(result)}개 (버킷 {len(_KR_QUERY_BUCKETS)}개)")
     return result
 
 
@@ -656,13 +777,10 @@ _US_QUERY_BUCKETS = [
 ]
 
 
-def get_us_news(max_age: int = 86400) -> list[dict]:
-    """AI 생태계 다양성 확보를 위한 멀티버킷 뉴스 수집"""
-    now = time.time()
-
+def get_us_news(cutoff: float = 0.0) -> list[dict]:
+    """cutoff(UTC epoch) 이후 발행된 미장 뉴스 멀티버킷 수집."""
     def entry_to_dict(entry) -> dict:
-        parsed = entry.get("published_parsed")
-        pub_ts = time.mktime(parsed) if parsed else 0.0
+        pub_ts = _pub_ts_utc(entry)
         return {
             "title": entry.get("title", ""),
             "link": entry.get("link", ""),
@@ -682,8 +800,7 @@ def get_us_news(max_age: int = 86400) -> list[dict]:
             continue
         bucket: list[dict] = []
         for e in feed.entries[:15]:
-            ts = time.mktime(e.get("published_parsed") or time.gmtime(0))
-            if ts < now - max_age:
+            if _pub_ts_utc(e) < cutoff:
                 continue
             title = e.get("title", "")
             key = title[:50].lower()
@@ -693,12 +810,10 @@ def get_us_news(max_age: int = 86400) -> list[dict]:
             bucket.append(entry_to_dict(e))
         bucket_results.append(bucket)
 
-    # 버킷별 최신 3개씩 - 종목 다양성 확보
     result: list[dict] = []
     for bucket in bucket_results:
         result.extend(sorted(bucket, key=lambda x: -x["pubTs"])[:3])
 
-    # 최종 중복 제거 후 최신순 정렬
     final_seen: set[str] = set()
     deduped: list[dict] = []
     for item in sorted(result, key=lambda x: -x["pubTs"]):
@@ -707,8 +822,7 @@ def get_us_news(max_age: int = 86400) -> list[dict]:
             final_seen.add(key)
             deduped.append(item)
 
-    label = f"{max_age // 3600}h"
-    print(f"[미장 뉴스] {label} 멀티버킷 {len(deduped)}개 (버킷 {len(_US_QUERY_BUCKETS)}개)")
+    print(f"[미장뉴스] cutoff 필터 후 {len(deduped)}개 (버킷 {len(_US_QUERY_BUCKETS)}개)")
     return deduped
 
 
@@ -764,31 +878,52 @@ def _analyze_with_claude(titles_text: str, schedule_text: str, market: str = "kr
         return None
 
 
+_GEMINI_MODEL_CHAIN = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
+# 마지막 성공한 Gemini 분석 결과 캐시 (503 과부하 시 재사용)
+_gemini_last_ok: dict = {"kr": None, "us": None}
+
+
 def _analyze_with_gemini(titles_text: str, schedule_text: str, market: str = "kr") -> dict | None:
     if not _gemini_client:
         return None
-    try:
-        prompt = _get_system_prompt(market)
-        if market == "us":
-            user_content = f"[Today's US News]\n{titles_text}"
-        else:
-            user_content = f"{schedule_text}\n\n[오늘의 뉴스 목록]\n{titles_text}"
-        response = _gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            config=google_genai_types.GenerateContentConfig(
-                system_instruction=prompt,
-                temperature=0.3,
-            ),
-            contents=user_content,
-        )
-        text = response.text.strip()
-        result = _parse_and_filter_analysis(text, [], market)
-        if result:
-            print(f"[Gemini] {market.upper()} 분석 완료")
-        return result
-    except Exception as e:
-        print(f"[Gemini 분석 에러] {e}")
-        return None
+    prompt = _get_system_prompt(market)
+    user_content = (
+        f"[Today's US News]\n{titles_text}" if market == "us"
+        else f"{schedule_text}\n\n[오늘의 뉴스 목록]\n{titles_text}"
+    )
+    overload_count = 0
+    for model in _GEMINI_MODEL_CHAIN:
+        try:
+            response = _gemini_client.models.generate_content(
+                model=model,
+                config=google_genai_types.GenerateContentConfig(
+                    system_instruction=prompt,
+                    temperature=0.3,
+                ),
+                contents=user_content,
+            )
+            text = response.text.strip()
+            result = _parse_and_filter_analysis(text, [], market)
+            if result:
+                print(f"[Gemini:{model.split('-')[-1]}] {market.upper()} 분석 완료")
+                _gemini_last_ok[market] = result  # 성공 결과 저장
+            return result
+        except Exception as e:
+            err_str = str(e)
+            if "503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str:
+                overload_count += 1
+                print(f"[Gemini:{model}] {market.upper()} 과부하 → 다음 모델 시도")
+                continue
+            print(f"[Gemini 분석 에러] {e}")
+            return None
+
+    # 모든 모델 과부하 → 마지막 성공 결과 재사용
+    cached = _gemini_last_ok.get(market)
+    if cached:
+        print(f"[Gemini] 과부하 — 직전 성공 결과 재사용 ({market.upper()})")
+        return cached
+    print(f"[Gemini] 모든 모델 실패, 캐시도 없음 ({market.upper()})")
+    return None
 
 
 _STATUS_SAFETY: dict[str, int] = {
@@ -835,18 +970,23 @@ def _cross_validate(claude_result: dict, gemini_result: dict) -> dict:
                 same = c_status == g_status
 
                 if not same:
-                    # 더 보수적인 등급 채택 (과열주의 > 추세관망 > 호재강함)
-                    s["investment_status"] = _safer_status(c_status, g_status)
-                    s["investment_guide"] = c_guide  # 기본값; UI에서 분리 렌더링
+                    safer = _safer_status(c_status, g_status)
+                    s["investment_status"] = safer
+                    # 두 AI 시선을 하나의 가이드 필드에 통합
+                    s["investment_guide"] = (
+                        f"[🤖 Claude 시선] {c_guide} "
+                        f"[✨ Gemini 시선] {g_guide}"
+                    )
                     s["ai_consensus"] = {
                         "claude": c_status,
                         "gemini": g_status,
                         "method": "downgraded",
+                        "final": safer,
                         "claude_guide": c_guide,
                         "gemini_guide": g_guide,
                     }
                 else:
-                    # 만장일치: 더 긴(상세한) 가이드 채택
+                    # 만장일치: 더 상세한 가이드 채택
                     s["investment_guide"] = c_guide if len(c_guide) >= len(g_guide) else g_guide
                     s["ai_consensus"] = {
                         "claude": c_status,
@@ -919,9 +1059,10 @@ def _update_daily_weather(market: str, result: dict) -> None:
         store["weatherReason"] = result.get("weatherReason", "")
         store["dailyStrategy"] = result.get("dailyStrategy", "")
         store["ts"] = now
+        _weather_label = JACKET_WEATHER_MAP[avg_score].encode("ascii", "replace").decode()
         print(
-            f"[일별날씨] {market.upper()} 총합 확정 → {avg_score}/5 "
-            f"({JACKET_WEATHER_MAP[avg_score]}) | 샘플 {len(store['scores'])}개"
+            f"[일별날씨] {market.upper()} 총합 확정 -> {avg_score}/5 "
+            f"({_weather_label}) | 샘플 {len(store['scores'])}개"
         )
     else:
         remain = int((DAILY_WEATHER_TTL - elapsed) / 60)
@@ -1061,47 +1202,75 @@ def prefetch_stocks(codes: list[str]) -> None:
 
 @app.get("/api/feeds")
 def get_feeds(market: str = Query("kr", pattern="^(kr|us)$")):
+    _cutoff, _fallback_cutoff, _window_label = _get_news_cutoff(market)
     cache = _feeds_cache[market]
     if cache["data"] and time.time() - cache["ts"] < FEEDS_TTL:
         if market == "kr":
             cached = dict(cache["data"])
             cached["scheduleSourceNews"] = _schedule_store.get("sourceNews", [])[:8]
+            cached["newsWindowLabel"] = _window_label
             return cached
-        return cache["data"]
+        cached = dict(cache["data"])
+        cached["newsWindowLabel"] = _window_label
+        return cached
 
-    # 뉴스 수집
-    if market == "us":
-        raw_news = get_us_news(max_age=86400)
-        filtered = [n for n in raw_news if is_us_relevant(n["title"])]
-        if len(filtered) < 5:
-            print(f"[미장뉴스] 필터 후 {len(filtered)}개 - 3일로 확대 재수집")
-            raw_news = get_us_news(max_age=259200)
-            filtered = [n for n in raw_news if is_us_relevant(n["title"])]
-            if not filtered:
-                filtered = raw_news[:8]
-    else:
-        raw_news = get_jensen_news(max_age=86400)
-        filtered = [n for n in raw_news if is_kospi_relevant(n["title"])]
-        if len(filtered) < 5:
-            print(f"[국장뉴스] 필터 후 {len(filtered)}개 - 3일로 확대 재수집")
-            raw_news = get_jensen_news(max_age=259200)
-            filtered = [n for n in raw_news if is_kospi_relevant(n["title"])]
-            if not filtered:
-                filtered = raw_news[:8]
-        # 국장: 동일 기업 키워드 기사 최대 2개로 제한 (LG·삼성 도배 방지)
-        _KR_MAJOR = ["LG", "삼성", "SK하이닉스", "SK", "현대차", "현대", "네이버", "두산", "한화", "카카오"]
-        _kw_counts: dict[str, int] = {}
-        _diversified: list[dict] = []
-        for _n in filtered:
-            _dominant = next((kw for kw in _KR_MAJOR if kw in _n["title"]), None)
-            if _dominant:
-                _kw_counts[_dominant] = _kw_counts.get(_dominant, 0) + 1
-                if _kw_counts[_dominant] > 2:
+    # "최신" 기준: 오늘 00:00 KST 또는 최근 12h 중 더 오래된 시각 → 더 많은 최신 기사 포함
+    _now_kst = datetime.now(KST)
+    _today_start_ts = _now_kst.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    _12h_ts = time.time() - 43200
+    _recent_cutoff = min(_today_start_ts, _12h_ts)  # 둘 중 더 오래된 시각
+
+    def _split_today_fallback(news_list: list[dict]) -> tuple[list[dict], list[dict]]:
+        today = [n for n in news_list if n.get("pubTs", 0) >= _recent_cutoff]
+        old   = [n for n in news_list if n.get("pubTs", 0) < _recent_cutoff]
+        return today, old
+
+    def _diversity_filter(news_list: list[dict], major_kw: list[str], is_kr: bool) -> list[dict]:
+        counts: dict[str, int] = {}
+        result: list[dict] = []
+        for n in news_list:
+            dom = next(
+                (kw for kw in major_kw if (kw in n["title"] if is_kr else kw.lower() in n["title"].lower())),
+                None
+            )
+            if dom:
+                counts[dom] = counts.get(dom, 0) + 1
+                if counts[dom] > 3:
                     continue
-            _diversified.append(_n)
-        filtered = _diversified
+            result.append(n)
+        return result
 
-    filtered = filtered[:8]
+    # 뉴스 수집 — 항상 72h로 넓게 수집, today/fallback은 오늘 00:00 기준으로 분리
+    _72h_cutoff = time.time() - 259200
+    if market == "us":
+        _US_MAJOR = ["Nvidia", "NVDA", "Microsoft", "Apple", "Amazon", "Google",
+                     "Meta", "TSMC", "AMD", "Broadcom", "Palantir", "Vertiv"]
+        print(f"[미장뉴스] 수집 윈도우: {_window_label} (수집범위 72h)")
+        raw_all = get_us_news(cutoff=_72h_cutoff)
+        rel_all = [n for n in raw_all if is_us_relevant(n["title"])]
+        if not rel_all:
+            rel_all = raw_all
+        rel_all = sorted(_diversity_filter(rel_all, _US_MAJOR, False), key=lambda x: -x.get("pubTs", 0))
+        today_news, old_news = _split_today_fallback(rel_all)
+        needed = max(0, 8 - len(today_news))
+        fallback_news = old_news[:needed]
+        print(f"[미장뉴스] 최신 {len(today_news)}개 + 전일보충 {len(fallback_news)}개")
+    else:
+        _KR_MAJOR = ["LG", "삼성", "SK하이닉스", "SK", "현대차", "현대", "네이버", "두산", "한화", "카카오"]
+        print(f"[국장뉴스] 수집 윈도우: {_window_label} (수집범위 72h)")
+        raw_all = get_jensen_news(cutoff=_72h_cutoff)
+        rel_all = [n for n in raw_all if is_kospi_relevant(n["title"])]
+        if not rel_all:
+            rel_all = raw_all
+        rel_all = sorted(_diversity_filter(rel_all, _KR_MAJOR, True), key=lambda x: -x.get("pubTs", 0))
+        today_news, old_news = _split_today_fallback(rel_all)
+        needed = max(0, 8 - len(today_news))
+        fallback_news = old_news[:needed]
+        print(f"[국장뉴스] 최신 {len(today_news)}개 + 전일보충 {len(fallback_news)}개")
+
+    # AI 분석용 합산 (오늘 먼저, 이후 fallback) — 최대 8개
+    filtered = (today_news + fallback_news)[:8]
+    _today_title_set = {n["title"][:50] for n in today_news}
 
     analysis = analyze_news_batch(filtered, market=market)
     analyzed_items = analysis.get("items", [])
@@ -1170,20 +1339,27 @@ def get_feeds(market: str = Query("kr", pattern="^(kr|us)$")):
     # 동일 종목 복수 기사 → 지배 뉴스 기준으로 투자 상태 통일
     result_items = _consolidate_stock_signals(result_items)
 
-    # 파급력 4점↑ Top2 고정 + 나머지 최신순
-    pinned = sorted(
-        [x for x in result_items if x["impactScore"] >= 4],
-        key=lambda x: (-x["impactScore"], -x["pubTs"])
-    )[:2]
+    # today / fallback 분리
+    today_items    = [x for x in result_items if x["title"][:50] in _today_title_set]
+    fallback_items = [x for x in result_items if x["title"][:50] not in _today_title_set]
+
+    # today: 파급력 4점↑ 상단 고정 + 나머지 최신순
+    pinned = sorted([x for x in today_items if x["impactScore"] >= 4],
+                    key=lambda x: (-x["impactScore"], -x["pubTs"]))[:2]
     pinned_ids = {id(x) for x in pinned}
-    rest = sorted([x for x in result_items if id(x) not in pinned_ids], key=lambda x: -x["pubTs"])
+    rest_today = sorted([x for x in today_items if id(x) not in pinned_ids], key=lambda x: -x["pubTs"])
     for item in pinned:
         item["isPinned"] = True
-    sorted_items = (pinned + rest)[:5]
+    today_sorted = pinned + rest_today
+
+    # fallback: 최신순
+    fallback_sorted = sorted(fallback_items, key=lambda x: -x["pubTs"])
+
+    sorted_items = (today_sorted + fallback_sorted)[:8]
     for i, item in enumerate(sorted_items):
         item["id"] = str(i + 1)
 
-    print(f"[{market.upper()} 정렬] 고정 {len(pinned)}개 + 최신 {len(rest)}개")
+    print(f"[{market.upper()} 정렬] today {len(today_sorted)}개 + fallback {len(fallback_sorted)}개")
 
     # 상단 날씨 위젯 — 하루 총합 누적값(3시간 고정) 우선, 없으면 실시간 분석값 사용
     dw = _daily_weather[market]
@@ -1203,6 +1379,9 @@ def get_feeds(market: str = Query("kr", pattern="^(kr|us)$")):
         "weatherSampleCount": sample_count,
         "weatherUpdatedAt": weather_updated,
         "aiMethod": analysis.get("aiMethod", "fallback"),
+        "newsWindowLabel": _window_label,
+        "today_feeds": today_sorted,
+        "fallback_feeds": fallback_sorted,
         "items": sorted_items,
     }
     if market == "kr":

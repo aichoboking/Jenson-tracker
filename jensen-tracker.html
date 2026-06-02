@@ -192,6 +192,40 @@
         }
         .last-updated { font-size: 12px; color: #33333f; }
 
+        /* ── 피드 서브섹션 ── */
+        .feed-subsection-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 20px 0 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #1e1e28;
+        }
+        .feed-subsection-header span {
+            font-size: 12px;
+            font-weight: 700;
+            color: #55556a;
+            letter-spacing: 0.5px;
+        }
+        .feed-subsection-header.fallback-header span { color: #44445a; }
+        /* 전일 카드: 불투명도 낮춤 */
+        .card-fallback {
+            opacity: 0.72;
+            border-color: #1a1a22;
+        }
+        .card-fallback:hover { opacity: 0.92; }
+        .fallback-badge {
+            display: inline-block;
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 20px;
+            background: #1e1e28;
+            color: #55556a;
+            font-weight: 600;
+            vertical-align: middle;
+            margin-left: 6px;
+        }
+
         /* ── 뉴스 카드 ── */
         .card {
             background: #13131a;
@@ -357,8 +391,22 @@
             letter-spacing: 0.6px;
             text-transform: uppercase;
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
         }
+        /* ── 듀얼 AI 시선 가이드 ── */
+        .dual-guide { display: flex; flex-direction: column; gap: 8px; }
+        .dual-guide-row {
+            display: flex; gap: 8px; align-items: flex-start;
+            padding: 7px 10px; border-radius: 8px;
+        }
+        .dual-guide-row.claude-row { background: rgba(126,184,255,0.06); border: 1px solid rgba(126,184,255,0.14); }
+        .dual-guide-row.gemini-row { background: rgba(255,170,85,0.06);  border: 1px solid rgba(255,170,85,0.14); }
+        .dual-guide-ai-label {
+            font-size: 10px; font-weight: 800; white-space: nowrap;
+            padding-top: 1px; flex-shrink: 0;
+        }
+        .claude-label { color: #7eb8ff; }
+        .gemini-label { color: #ffaa55; }
         .sgc-guide-text {
             font-size: 13px;
             color: #8a8aaa;
@@ -438,8 +486,9 @@
             font-weight: 800;
             letter-spacing: 0.5px;
         }
-        .dday-future { color: #5566ff; }
-        .dday-today  { color: #00ff88; }
+        .dday-future  { color: #5566ff; }
+        .dday-today   { color: #00ff88; }
+        .dday-unknown { color: #55556a; font-size: 11px; }
 
         .sch-date {
             font-size: 10px;
@@ -710,9 +759,10 @@
 
         return groups.map(dayItems => {
             const first   = dayItems[0];
-            const isToday = first.dDayNum === 0;
-            const cardCls = isToday ? "schedule-card is-today" : "schedule-card";
-            const ddayCls = isToday ? "dday-today" : "dday-future";
+            const isToday   = first.dDayNum === 0;
+            const isUnknown = first.dDay === "미정";
+            const cardCls  = isToday ? "schedule-card is-today" : "schedule-card";
+            const ddayCls  = isUnknown ? "dday-unknown" : isToday ? "dday-today" : "dday-future";
 
             const eventRows = dayItems.map(s => {
                 const statusCls = s.status === "확정" ? "status-confirmed"
@@ -806,12 +856,17 @@
         return `<span class="ai-badge claude-only" title="Gemini 분석 없음">🤖 Claude</span>`;
     }
 
-    function dualAiIndicator() {
-        return `<div class="dual-ai-indicator active">🤖 Claude × ✨ Gemini 교차검증 완료</div>`;
+    function dualAiIndicator(aiMethod) {
+        if (aiMethod === "dual")
+            return `<div class="dual-ai-indicator active">🤖 Claude × ✨ Gemini 교차검증 완료</div>`;
+        if (aiMethod === "claude_only")
+            return `<div class="dual-ai-indicator" style="opacity:.55">🤖 Claude 단독 분석 (Gemini 대기 중)</div>`;
+        return "";
     }
 
     function guideBox(s) {
         const consensus = s.ai_consensus || {};
+        // 의견 불일치: Claude·Gemini 각각 표시
         if (consensus.method === "downgraded" && consensus.claude_guide && consensus.gemini_guide) {
             return `
             <div class="sgc-guide-box">
@@ -826,6 +881,15 @@
                         <span class="sgc-guide-text">${consensus.gemini_guide}</span>
                     </div>
                 </div>
+            </div>`;
+        }
+        // 만장일치: 가이드 아래에 Gemini 동의 한 줄 표시
+        if (consensus.method === "unanimous" && consensus.gemini) {
+            return `
+            <div class="sgc-guide-box">
+                <span class="sgc-guide-label">💡 AI 투자 전망 가이드</span>
+                <span class="sgc-guide-text">${s.investment_guide || "분석 데이터 없음"}</span>
+                <div style="margin-top:6px;font-size:11px;color:#00b860;opacity:.85">✨ Gemini 동의: ${consensus.gemini}</div>
             </div>`;
         }
         return `
@@ -982,67 +1046,90 @@
                     if (!n) return '';
                     return `<div class="weather-sample-info">📊 오늘 <em>${n}회</em> 분석 누적 이동 평균${upd ? ` · <em>${upd}</em> 확정 (3시간 고정)` : ''}</div>`;
                 })()}
-                ${dualAiIndicator()}
+                ${dualAiIndicator(data.aiMethod)}
             </div>`;
     }
 
-    /* ── 뉴스 피드 렌더링 ──
-       items[] 필드: id, time, title, link, aiSummary
-       stocks[] 필드: name, code, appeal, change
-    ── */
-    function renderFeeds(data) {
-        const items = data.items || [];
-        if (!items.length) {
-            document.getElementById("feedContainer").innerHTML =
-                `<div class="error-box"><h3>📭 국장 관련 뉴스 없음</h3><p>지금은 레이더에 잡힌 뉴스가 없습니다.</p></div>`;
-            return;
-        }
-
-        document.getElementById("feedContainer").innerHTML = items.map(item => {
-            const stockCards = (item.stocks || []).map(s => {
-                const url = stockUrl(s);
-                return `
-                <div class="stock-guide-card">
-                    <div class="sgc-header">
-                        <a class="sgc-name-link"
-                           href="${url}"
-                           target="_blank" rel="noopener">
-                            <span class="stock-name">${s.name}${newDiscoveryBadge(s)}</span>
-                            <span class="${changeClass(s.change)}">${s.change || "N/A"}</span>
-                        </a>
-                        ${statusBadge(s.investment_status)}${consensusBadge(s.ai_consensus)}
-                    </div>
-                    ${guideBox(s)}
-                </div>`;
-            }).join("");
-
-            const stockSection = item.stocks?.length ? `
-                <div class="stock-section-title">레이더 포착 수혜주</div>
-                ${stockCards}` : "";
-
-            const pinnedBadge = item.isPinned
-                ? `<span class="pinned-badge">🔥 파급력 ${item.impactScore}점 · 주목</span>`
-                : (item.impactScore >= 3 ? `<span class="impact-score">파급력 ${item.impactScore}점</span>` : "");
-
-            const articleLink = item.link
-                ? `<a class="article-link" href="${item.link}" target="_blank" rel="noopener">기사 원문 보기 →</a>`
-                : "";
-
+    /* ── 뉴스 피드 렌더링 ── */
+    function buildCard(item, isFallback = false) {
+        const stockCards = (item.stocks || []).map(s => {
+            const url = stockUrl(s);
             return `
-            <div class="card${item.isPinned ? " card-pinned" : ""}">
-                <div class="time-text">${timeAgo(item.time)}${pinnedBadge}</div>
-                <div class="card-title">${item.title}</div>
-                <div class="ai-brief-box">
-                    <div class="ai-brief-title">🤖 AI 브리핑</div>
-                    <div class="ai-brief-text">${item.aiSummary || "분석 데이터 없음"}</div>
+            <div class="stock-guide-card">
+                <div class="sgc-header">
+                    <a class="sgc-name-link" href="${url}" target="_blank" rel="noopener">
+                        <span class="stock-name">${s.name}${newDiscoveryBadge(s)}</span>
+                        <span class="${changeClass(s.change)}">${s.change || "N/A"}</span>
+                    </a>
+                    ${statusBadge(s.investment_status)}${consensusBadge(s.ai_consensus)}
                 </div>
-                ${stockSection}
-                ${articleLink}
+                ${guideBox(s)}
             </div>`;
         }).join("");
 
-        document.getElementById("lastUpdated").textContent =
-            `업데이트: ${new Date().toLocaleTimeString("ko-KR")}`;
+        const stockSection = item.stocks?.length
+            ? `<div class="stock-section-title">레이더 포착 수혜주</div>${stockCards}` : "";
+
+        const pinnedBadge = item.isPinned
+            ? `<span class="pinned-badge">🔥 파급력 ${item.impactScore}점 · 주목</span>`
+            : (item.impactScore >= 3 ? `<span class="impact-score">파급력 ${item.impactScore}점</span>` : "");
+
+        const fallbackBadge = isFallback
+            ? `<span class="fallback-badge">⏳ 전일 기사</span>` : "";
+
+        const articleLink = item.link
+            ? `<a class="article-link" href="${item.link}" target="_blank" rel="noopener">기사 원문 보기 →</a>` : "";
+
+        return `
+        <div class="card${item.isPinned ? " card-pinned" : ""}${isFallback ? " card-fallback" : ""}">
+            <div class="time-text">${timeAgo(item.time)}${pinnedBadge}${fallbackBadge}</div>
+            <div class="card-title">${item.title}</div>
+            <div class="ai-brief-box">
+                <div class="ai-brief-title">🤖 AI 브리핑</div>
+                <div class="ai-brief-text">${item.aiSummary || "분석 데이터 없음"}</div>
+            </div>
+            ${stockSection}
+            ${articleLink}
+        </div>`;
+    }
+
+    function renderFeeds(data) {
+        const todayItems    = data.today_feeds    || data.items || [];
+        const fallbackItems = data.fallback_feeds || [];
+
+        if (!todayItems.length && !fallbackItems.length) {
+            document.getElementById("feedContainer").innerHTML =
+                `<div class="error-box"><h3>📭 뉴스 없음</h3><p>지금은 레이더에 잡힌 뉴스가 없습니다.</p></div>`;
+            return;
+        }
+
+        let html = "";
+
+        // 오늘 뉴스 섹션
+        if (todayItems.length) {
+            html += `<div class="feed-subsection-header">
+                <span>💡 실시간 오늘 레이더</span>
+            </div>`;
+            html += todayItems.map(item => buildCard(item, false)).join("");
+        }
+
+        // 전일 보충 섹션
+        if (fallbackItems.length) {
+            html += `<div class="feed-subsection-header fallback-header" style="margin-top:${todayItems.length ? 28 : 0}px">
+                <span>⏳ 참고용 전일 리포트</span>
+            </div>`;
+            html += fallbackItems.map(item => buildCard(item, true)).join("");
+        }
+
+        document.getElementById("feedContainer").innerHTML = html;
+
+        const _now = new Date();
+        const _kstDay = new Date(_now.getTime() + 9 * 3600 * 1000).getUTCDay();
+        const _isWeekend = _kstDay === 0 || _kstDay === 6;
+        const _weekendBadge = _isWeekend
+            ? ' <span style="background:#fff3e0;color:#e65100;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;">주말 휴장기 레이더 가동 중 ⏳</span>' : '';
+        document.getElementById("lastUpdated").innerHTML =
+            `업데이트: ${_now.toLocaleTimeString("ko-KR")}${_weekendBadge}`;
     }
 
     /* ── 에러 렌더링 ── */

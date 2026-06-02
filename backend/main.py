@@ -692,21 +692,33 @@ def refresh_schedule() -> dict:
     return {"status": "ok", "count": len(final), "source": "claude"}
 
 
+def _warmup_feeds():
+    for market in ("kr", "us"):
+        try:
+            get_feeds(market=market)
+            print(f"[워밍업] {market.upper()} 피드 캐시 갱신 완료")
+        except Exception as e:
+            print(f"[워밍업 에러] {market}: {e}")
+
 def _background_schedule_loop():
     time.sleep(2)
+    tick = 0
     while True:
         try:
-            refresh_schedule()
-            schedule_codes = [
-                code
-                for s in _schedule_store["items"]
-                for code in s.get("relatedCodes", [])
-            ]
-            prefetch_stocks(schedule_codes)
-            print(f"[워밍업] 주가 {len(set(schedule_codes))}개 종목 캐싱 완료")
+            if tick % 6 == 0:  # 1시간(10분*6)마다 일정/주가 갱신
+                refresh_schedule()
+                schedule_codes = [
+                    code
+                    for s in _schedule_store["items"]
+                    for code in s.get("relatedCodes", [])
+                ]
+                prefetch_stocks(schedule_codes)
+                print(f"[워밍업] 주가 {len(set(schedule_codes))}개 종목 캐싱 완료")
+            _warmup_feeds()
         except Exception as e:
             print(f"[일정 루프 에러] {e}")
-        time.sleep(SCHEDULE_TTL)
+        tick += 1
+        time.sleep(FEEDS_TTL)  # 10분마다 실행
 
 
 # ── 뉴스 수집 & 분석 ────────────────────────────────────────────────────

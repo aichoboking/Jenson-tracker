@@ -242,6 +242,11 @@ NEWS_SYSTEM_PROMPT = f"""너는 대한민국 증시 전문가이자 전설적인
 
 방한 일정에서 '확정' 이벤트는 당일 또는 전날부터 해당 기업 주가에 선반영될 수 있으니 반드시 가중치를 높게 둬.
 
+━━━ 종목 다양성 원칙 ━━━
+동일 기업(예: LG전자, 삼성전자)에 대한 기사가 여러 개 있어도, stocks 배열 전체에서 특정 1개 기업이 3회 이상 중복 등장하지 않도록 안배해줘.
+LG·삼성·SK·현대·네이버 등 대기업 외에도, 밸류체인 중소형 수혜주(한미반도체, 두산로보틱스, 레인보우로보틱스 등)가 고루 노출될 수 있게 뉴스 배분 가중치를 분산해줘.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 ━━━ weatherReason 작성 절대 규칙 ━━━
 weatherReason은 30자 이내 한 줄로만 작성해.
 D-Day(D-숫자, D-DAY, D+숫자)는 절대 직접 계산하거나 추정해서 쓰지 마.
@@ -786,10 +791,15 @@ def _analyze_with_gemini(titles_text: str, schedule_text: str, market: str = "kr
         return None
 
 
-def _merge_guides(claude_guide: str, gemini_guide: str, same_status: bool) -> str:
-    if same_status:
-        return claude_guide if len(claude_guide) >= len(gemini_guide) else gemini_guide
-    return claude_guide + " ※ AI 의견 불일치 - 보수적 접근 권장"
+_STATUS_SAFETY: dict[str, int] = {
+    "호재강함": 1,
+    "추세관망(호재보통)": 2,
+    "과열주의": 3,
+}
+
+def _safer_status(a: str, b: str) -> str:
+    """안전 우선순위 기준으로 더 보수적인 등급 반환 (과열주의 > 추세관망 > 호재강함)."""
+    return a if _STATUS_SAFETY.get(a, 2) >= _STATUS_SAFETY.get(b, 2) else b
 
 
 def _cross_validate(claude_result: dict, gemini_result: dict) -> dict:
@@ -825,19 +835,24 @@ def _cross_validate(claude_result: dict, gemini_result: dict) -> dict:
                 same = c_status == g_status
 
                 if not same:
-                    s["investment_status"] = "추세관망(호재보통)"
+                    # 더 보수적인 등급 채택 (과열주의 > 추세관망 > 호재강함)
+                    s["investment_status"] = _safer_status(c_status, g_status)
+                    s["investment_guide"] = c_guide  # 기본값; UI에서 분리 렌더링
                     s["ai_consensus"] = {
                         "claude": c_status,
                         "gemini": g_status,
                         "method": "downgraded",
+                        "claude_guide": c_guide,
+                        "gemini_guide": g_guide,
                     }
                 else:
+                    # 만장일치: 더 긴(상세한) 가이드 채택
+                    s["investment_guide"] = c_guide if len(c_guide) >= len(g_guide) else g_guide
                     s["ai_consensus"] = {
                         "claude": c_status,
                         "gemini": g_status,
                         "method": "unanimous",
                     }
-                s["investment_guide"] = _merge_guides(c_guide, g_guide, same)
             else:
                 s["ai_consensus"] = {
                     "claude": c_status,
@@ -997,6 +1012,38 @@ def get_stock_change(code: str) -> str:
     return change
 
 
+def _consolidate_stock_signals(result_items: list[dict]) -> list[dict]:
+    """동일 종목이 여러 기사에 중복 등장할 때, 파급력 최고 기사의 투자 상태로 통일."""
+    # 종목별 최고 파급력 기사의 status 수집
+    stock_best: dict[str, tuple[int, str]] = {}
+    for item in result_items:
+        impact = int(item.get("impactScore", 1))
+        for s in item.get("stocks", []):
+            code = s.get("code", "")
+            if not code or code == "search":
+                continue
+            prev = stock_best.get(code)
+            if prev is None or impact > prev[0]:
+                stock_best[code] = (impact, s.get("investment_status", "추세관망(호재보통)"))
+
+    # 약한 기사의 종목 상태를 지배 기사 기준으로 덮어쓰기
+    for item in result_items:
+        impact = int(item.get("impactScore", 1))
+        for s in item.get("stocks", []):
+            code = s.get("code", "")
+            if not code or code == "search":
+                continue
+            best_impact, best_status = stock_best.get(code, (impact, s.get("investment_status", "")))
+            orig_status = s.get("investment_status", "")
+            if best_impact > impact and orig_status != best_status:
+                s["investment_status"] = best_status
+                guide = s.get("investment_guide", "")
+                s["investment_guide"] = (
+                    guide + " 단, 더 강한 재료가 포착된 기사 기준으로 통일된 신호입니다."
+                ).strip()
+    return result_items
+
+
 def prefetch_stocks(codes: list[str]) -> None:
     unique = [c for c in set(codes) if c and c not in _stock_cache]
     if not unique:
@@ -1041,6 +1088,18 @@ def get_feeds(market: str = Query("kr", pattern="^(kr|us)$")):
             filtered = [n for n in raw_news if is_kospi_relevant(n["title"])]
             if not filtered:
                 filtered = raw_news[:8]
+        # 국장: 동일 기업 키워드 기사 최대 2개로 제한 (LG·삼성 도배 방지)
+        _KR_MAJOR = ["LG", "삼성", "SK하이닉스", "SK", "현대차", "현대", "네이버", "두산", "한화", "카카오"]
+        _kw_counts: dict[str, int] = {}
+        _diversified: list[dict] = []
+        for _n in filtered:
+            _dominant = next((kw for kw in _KR_MAJOR if kw in _n["title"]), None)
+            if _dominant:
+                _kw_counts[_dominant] = _kw_counts.get(_dominant, 0) + 1
+                if _kw_counts[_dominant] > 2:
+                    continue
+            _diversified.append(_n)
+        filtered = _diversified
 
     filtered = filtered[:8]
 
@@ -1107,6 +1166,9 @@ def get_feeds(market: str = Query("kr", pattern="^(kr|us)$")):
             "impactScore": int(ai.get("impactScore", 3)),
             "stocks": stocks,
         })
+
+    # 동일 종목 복수 기사 → 지배 뉴스 기준으로 투자 상태 통일
+    result_items = _consolidate_stock_signals(result_items)
 
     # 파급력 4점↑ Top2 고정 + 나머지 최신순
     pinned = sorted(

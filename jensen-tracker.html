@@ -365,6 +365,26 @@
             line-height: 1.65;
         }
 
+        /* ── 불일치 시 AI 분리 가이드 ── */
+        .sgc-guide-dual { display: flex; flex-direction: column; gap: 8px; }
+        .sgc-guide-view {
+            background: #0e0e18;
+            border-radius: 8px;
+            padding: 9px 12px;
+            border-left: 2px solid #2a2a42;
+        }
+        .sgc-guide-view.claude-view { border-left-color: #5566cc; }
+        .sgc-guide-view.gemini-view { border-left-color: #cc8833; }
+        .sgc-guide-view-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            display: block;
+        }
+        .claude-view .sgc-guide-view-label { color: #7788ee; }
+        .gemini-view .sgc-guide-view-label { color: #ddaa55; }
+
         /* ── 로딩 ── */
         .radar-emoji { font-size: 40px; animation: pulse 1.5s ease-in-out infinite; }
         @keyframes pulse {
@@ -790,6 +810,31 @@
         return `<div class="dual-ai-indicator active">🤖 Claude × ✨ Gemini 교차검증 완료</div>`;
     }
 
+    function guideBox(s) {
+        const consensus = s.ai_consensus || {};
+        if (consensus.method === "downgraded" && consensus.claude_guide && consensus.gemini_guide) {
+            return `
+            <div class="sgc-guide-box">
+                <span class="sgc-guide-label">💡 AI 교차 분석 · 의견 불일치</span>
+                <div class="sgc-guide-dual">
+                    <div class="sgc-guide-view claude-view">
+                        <span class="sgc-guide-view-label">🤖 Claude 시선</span>
+                        <span class="sgc-guide-text">${consensus.claude_guide}</span>
+                    </div>
+                    <div class="sgc-guide-view gemini-view">
+                        <span class="sgc-guide-view-label">✨ Gemini 시선</span>
+                        <span class="sgc-guide-text">${consensus.gemini_guide}</span>
+                    </div>
+                </div>
+            </div>`;
+        }
+        return `
+        <div class="sgc-guide-box">
+            <span class="sgc-guide-label">💡 AI 투자 전망 가이드</span>
+            <span class="sgc-guide-text">${s.investment_guide || "분석 데이터 없음"}</span>
+        </div>`;
+    }
+
     /* ── 로딩 스켈레톤 ── */
     function renderLoading() {
         document.getElementById("weatherWidget").innerHTML = `
@@ -967,10 +1012,7 @@
                         </a>
                         ${statusBadge(s.investment_status)}${consensusBadge(s.ai_consensus)}
                     </div>
-                    <div class="sgc-guide-box">
-                        <span class="sgc-guide-label">💡 AI 투자 전망 가이드</span>
-                        <span class="sgc-guide-text">${s.investment_guide || "분석 데이터 없음"}</span>
-                    </div>
+                    ${guideBox(s)}
                 </div>`;
             }).join("");
 

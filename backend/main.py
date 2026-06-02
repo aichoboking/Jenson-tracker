@@ -878,7 +878,7 @@ def _analyze_with_claude(titles_text: str, schedule_text: str, market: str = "kr
         return None
 
 
-_GEMINI_MODEL_CHAIN = ["gemini-2.0-flash"]
+_GEMINI_MODEL_CHAIN = ["gemini-1.5-flash", "gemini-2.0-flash"]
 # 마지막 성공한 Gemini 분석 결과 캐시 (503 과부하 시 재사용)
 _gemini_last_ok: dict = {"kr": None, "us": None}
 

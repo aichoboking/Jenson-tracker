@@ -1185,40 +1185,40 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
 
     result = fallback
     try:
-        with ThreadPoolExecutor(max_workers=3) as ex:
+        # Claude + Groq 동시 시도 (Groq 한도 많음)
+        with ThreadPoolExecutor(max_workers=2) as ex:
             claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
             groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
-            gemini_fut = ex.submit(_analyze_with_gemini, titles_text, schedule_text, market)
+        try:
+            claude_result = claude_fut.result(timeout=20)
+        except Exception:
+            claude_result = None
+        try:
+            groq_result = groq_fut.result(timeout=10)
+        except Exception:
+            groq_result = None
 
-        def _safe_result(fut, timeout=15):
-            try:
-                return fut.result(timeout=timeout)
-            except Exception:
-                return None
+        # Groq 실패 시 Gemini 시도
+        if not groq_result:
+            gemini_result = _analyze_with_gemini(titles_text, schedule_text, market)
+        else:
+            gemini_result = None
 
-        claude_result = _safe_result(claude_fut, timeout=20)
-        groq_result = _safe_result(groq_fut, timeout=10)
-        gemini_result = _safe_result(gemini_fut, timeout=10)
+        secondary = groq_result or gemini_result
+        secondary_name = "Groq" if groq_result else ("Gemini" if gemini_result else None)
 
-        available = [r for r in [claude_result, groq_result, gemini_result] if r]
-        names = [n for n, r in [("Claude", claude_result), ("Groq", groq_result), ("Gemini", gemini_result)] if r]
-
-        if len(available) >= 2:
-            base = claude_result if claude_result else available[0]
-            secondary = next(r for r in [groq_result, gemini_result, claude_result] if r and r is not base)
-            result = _cross_validate(base, secondary)
-            if len(available) == 3:
-                scores = [r.get("jacketIndex", 3) for r in available]
-                result["jacketIndex"] = round(sum(scores) / len(scores))
-                result["marketWeather"] = JACKET_WEATHER_MAP.get(result["jacketIndex"], "🌥️흐림")
-                result["aiMethod"] = "triple"
-            else:
-                result["aiMethod"] = "dual"
-            print(f"[분석] {' × '.join(names)} 교차검증 완료 ({market.upper()})")
-        elif len(available) == 1:
-            result = available[0]
-            result["aiMethod"] = f"{names[0].lower()}_only"
-            print(f"[분석] {names[0]} 단독 분석 완료 ({market.upper()})")
+        if claude_result and secondary:
+            result = _cross_validate(claude_result, secondary)
+            result["aiMethod"] = "dual"
+            print(f"[분석] Claude × {secondary_name} 교차검증 완료 ({market.upper()})")
+        elif claude_result:
+            result = claude_result
+            result["aiMethod"] = "claude_only"
+            print(f"[분석] Claude 단독 분석 완료 ({market.upper()})")
+        elif secondary:
+            result = secondary
+            result["aiMethod"] = f"{secondary_name.lower()}_only"
+            print(f"[분석] {secondary_name} 단독 분석 완료 ({market.upper()})")
         else:
             result = fallback
             print("[분석] 모든 AI 분석 실패 - 폴백 사용")

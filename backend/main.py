@@ -719,7 +719,7 @@ def _warmup_feeds():
             else:
                 news = get_us_news(cutoff=_72h)
             if news:
-                analyze_news_batch(news[:8], market=market)
+                analyze_news_batch(news[:8], market=market, warmup=True)
                 print(f"[워밍업] {market.upper()} 캐시 갱신 완료")
         except Exception as e:
             print(f"[워밍업 에러] {market}: {e}")
@@ -1187,52 +1187,43 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr", warmup: bool =
 
     result = fallback
     try:
-        if warmup:
-            # 워밍업: Claude만 빠르게 캐시 채움
-            claude_result = _analyze_with_claude(titles_text, schedule_text, market)
-            if claude_result:
-                result = claude_result
-                result["aiMethod"] = "claude_only"
-                print(f"[워밍업] Claude 캐시 완료 ({market.upper()})")
-            else:
-                result = fallback
+        # Claude + Groq 병렬 실행 (워밍업/실사용 공통)
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
+            groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
+        try:
+            claude_result = claude_fut.result(timeout=20)
+        except Exception:
+            claude_result = None
+        try:
+            groq_result = groq_fut.result(timeout=10)
+        except Exception:
+            groq_result = None
+
+        # Gemini는 실사용 요청에서 Groq 실패 시에만 호출 (워밍업에서는 호출 안 함)
+        if not warmup and not groq_result:
+            gemini_result = _analyze_with_gemini(titles_text, schedule_text, market)
         else:
-            # 실사용: Claude + Groq 동시, 실패 시 Gemini
-            with ThreadPoolExecutor(max_workers=2) as ex:
-                claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
-                groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
-            try:
-                claude_result = claude_fut.result(timeout=20)
-            except Exception:
-                claude_result = None
-            try:
-                groq_result = groq_fut.result(timeout=10)
-            except Exception:
-                groq_result = None
+            gemini_result = None
 
-            if not groq_result:
-                gemini_result = _analyze_with_gemini(titles_text, schedule_text, market)
-            else:
-                gemini_result = None
+        secondary = groq_result or gemini_result
+        secondary_name = "Groq" if groq_result else ("Gemini" if gemini_result else None)
 
-            secondary = groq_result or gemini_result
-            secondary_name = "Groq" if groq_result else ("Gemini" if gemini_result else None)
-
-            if claude_result and secondary:
-                result = _cross_validate(claude_result, secondary)
-                result["aiMethod"] = f"claude_{secondary_name.lower()}"
-                print(f"[분석] Claude × {secondary_name} 교차검증 완료 ({market.upper()})")
-            elif claude_result:
-                result = claude_result
-                result["aiMethod"] = "claude_only"
-                print(f"[분석] Claude 단독 분석 완료 ({market.upper()})")
-            elif secondary:
-                result = secondary
-                result["aiMethod"] = f"{secondary_name.lower()}_only"
-                print(f"[분석] {secondary_name} 단독 분석 완료 ({market.upper()})")
-            else:
-                result = fallback
-                print("[분석] 모든 AI 분석 실패 - 폴백 사용")
+        if claude_result and secondary:
+            result = _cross_validate(claude_result, secondary)
+            result["aiMethod"] = f"claude_{secondary_name.lower()}"
+            print(f"[{'워밍업' if warmup else '분석'}] Claude × {secondary_name} 교차검증 완료 ({market.upper()})")
+        elif claude_result:
+            result = claude_result
+            result["aiMethod"] = "claude_only"
+            print(f"[{'워밍업' if warmup else '분석'}] Claude 단독 완료 ({market.upper()})")
+        elif secondary:
+            result = secondary
+            result["aiMethod"] = f"{secondary_name.lower()}_only"
+            print(f"[{'워밍업' if warmup else '분석'}] {secondary_name} 단독 완료 ({market.upper()})")
+        else:
+            result = fallback
+            print(f"[{'워밍업' if warmup else '분석'}] 모든 AI 실패 - 폴백 사용 ({market.upper()})")
     except Exception as e:
         print(f"[분석 에러] {e}")
         result = fallback

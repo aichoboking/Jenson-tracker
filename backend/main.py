@@ -48,13 +48,30 @@ def _keep_alive_loop():
             pass
         time.sleep(840)  # 14분마다 핑
 
+def _initial_warmup():
+    """서버 시작 시 첫 분석을 캐시에 올려두는 동기 워밍업."""
+    try:
+        print("[서버] 초기 워밍업 시작...")
+        refresh_schedule()
+        _warmup_feeds()
+        print("[서버] 초기 워밍업 완료 - 요청 수락 시작")
+    except Exception as e:
+        print(f"[서버] 초기 워밍업 실패 ({e}) - 서버는 정상 시작")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+    loop = asyncio.get_event_loop()
+    try:
+        # 요청 받기 전에 첫 워밍업 완료 (최대 60초)
+        await asyncio.wait_for(loop.run_in_executor(None, _initial_warmup), timeout=60)
+    except asyncio.TimeoutError:
+        print("[서버] 초기 워밍업 타임아웃 - 서버 시작 진행")
     t = threading.Thread(target=_background_schedule_loop, daemon=True)
     t.start()
     t2 = threading.Thread(target=_keep_alive_loop, daemon=True)
     t2.start()
-    print("[서버] 일정 자동 갱신 루프 시작 (1시간 주기)")
+    print("[서버] 일정 자동 갱신 루프 시작 (30분 주기)")
     yield
 
 app = FastAPI(title="Jensen Tracker API", lifespan=lifespan)

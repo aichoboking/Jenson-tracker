@@ -456,6 +456,15 @@ DAILY_WEATHER_TTL = 10800  # 3시간 — 총합 날씨 최소 고정 시간
 KST = timezone(timedelta(hours=9))
 
 
+def _is_market_hours() -> bool:
+    """국장(8:30~16:00) 또는 미장(21:30~06:00) 시간대 여부 (KST 기준, 평일만)."""
+    now = datetime.now(KST)
+    if now.weekday() >= 5:
+        return False
+    h = now.hour + now.minute / 60
+    return (8.5 <= h <= 16.0) or (h >= 21.5) or (h < 6.0)
+
+
 def _get_news_cutoff(market: str) -> tuple[float, float, str]:
     """KST 기준 시장별 뉴스 수집 기준 시각(UTC epoch) 반환.
     Returns: (primary_cutoff, fallback_cutoff, label)
@@ -715,8 +724,10 @@ def _warmup_market(market: str):
         _72h = time.time() - 259200
         news = get_jensen_news(cutoff=_72h) if market == "kr" else get_us_news(cutoff=_72h)
         if news:
-            analyze_news_batch(news[:8], market=market, warmup=True)
-            print(f"[워밍업] {market.upper()} 캐시 갱신 완료")
+            is_peak = _is_market_hours()
+            analyze_news_batch(news[:8], market=market, warmup=not is_peak, free_only=not is_peak)
+            mode = "Claude" if is_peak else "OpenRouter(무료)"
+            print(f"[워밍업] {market.upper()} 캐시 갱신 완료 ({mode})")
     except Exception as e:
         print(f"[워밍업 에러] {market}: {e}")
 
@@ -1218,7 +1229,7 @@ def _update_daily_weather(market: str, result: dict) -> None:
         print(f"[일별날씨] {market.upper()} 캐시 유지 (갱신까지 {remain}분 남음)")
 
 
-def analyze_news_batch(news_list: list[dict], market: str = "kr", warmup: bool = False) -> dict:
+def analyze_news_batch(news_list: list[dict], market: str = "kr", warmup: bool = False, free_only: bool = False) -> dict:
     titles_text = "\n".join(f"{i+1}. {n['title']}" for i, n in enumerate(news_list))
     schedule_text = build_schedule_context() if market == "kr" else ""
     cache_key = _hash(titles_text + schedule_text + market)
@@ -1241,26 +1252,43 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr", warmup: bool =
 
     result = fallback
     try:
-        # Claude + Groq 병렬 실행 (워밍업/실사용 공통)
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
-            groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
-        try:
-            claude_result = claude_fut.result(timeout=20)
-        except Exception:
+        if free_only:
+            # 비장시간 워밍업: OpenRouter → Groq 순으로 무료 모델만 사용
             claude_result = None
-        try:
-            groq_result = groq_fut.result(timeout=10)
-        except Exception:
             groq_result = None
-
-        # OpenRouter·Gemini는 실사용 요청에서 Groq 실패 시에만 호출 (워밍업 제외)
-        openrouter_result = None
-        gemini_result = None
-        if not warmup and not groq_result:
             openrouter_result = _analyze_with_openrouter(titles_text, schedule_text, market)
             if not openrouter_result:
-                gemini_result = _analyze_with_gemini(titles_text, schedule_text, market)
+                groq_result = _analyze_with_groq(titles_text, schedule_text, market)
+            secondary = openrouter_result or groq_result
+            secondary_name = "OpenRouter" if openrouter_result else ("Groq" if groq_result else None)
+        else:
+            # 장시간: Claude + Groq 병렬 실행
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
+                groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
+            try:
+                claude_result = claude_fut.result(timeout=20)
+            except Exception:
+                claude_result = None
+            try:
+                groq_result = groq_fut.result(timeout=10)
+            except Exception:
+                groq_result = None
+
+            # OpenRouter·Gemini는 실사용 요청에서 Groq 실패 시에만 호출 (워밍업 제외)
+            openrouter_result = None
+            gemini_result = None
+            if not warmup and not groq_result:
+                openrouter_result = _analyze_with_openrouter(titles_text, schedule_text, market)
+                if not openrouter_result:
+                    gemini_result = _analyze_with_gemini(titles_text, schedule_text, market)
+
+            secondary = groq_result or openrouter_result or gemini_result
+            secondary_name = (
+                "Groq" if groq_result else
+                "OpenRouter" if openrouter_result else
+                ("Gemini" if gemini_result else None)
+            )
 
         secondary = groq_result or openrouter_result or gemini_result
         secondary_name = (

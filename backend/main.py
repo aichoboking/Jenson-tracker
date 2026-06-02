@@ -720,14 +720,11 @@ def refresh_schedule() -> dict:
 
 def _warmup_market(market: str):
     try:
-        _cutoff, _, _ = _get_news_cutoff(market)
-        _72h = time.time() - 259200
-        news = get_jensen_news(cutoff=_72h) if market == "kr" else get_us_news(cutoff=_72h)
-        if news:
-            is_peak = _is_market_hours()
-            analyze_news_batch(news[:8], market=market, warmup=not is_peak, free_only=not is_peak)
-            mode = "Claude" if is_peak else "OpenRouter(무료)"
-            print(f"[워밍업] {market.upper()} 캐시 갱신 완료 ({mode})")
+        # get_feeds()를 직접 호출해 _feeds_cache까지 채움
+        # 이후 사용자 요청은 항상 캐시 히트
+        _feeds_cache[market]["ts"] = 0  # 캐시 강제 만료 후 재생성
+        get_feeds(market=market)
+        print(f"[워밍업] {market.upper()} 캐시 갱신 완료")
     except Exception as e:
         print(f"[워밍업 에러] {market}: {e}")
 
@@ -1229,7 +1226,9 @@ def _update_daily_weather(market: str, result: dict) -> None:
         print(f"[일별날씨] {market.upper()} 캐시 유지 (갱신까지 {remain}분 남음)")
 
 
-def analyze_news_batch(news_list: list[dict], market: str = "kr", warmup: bool = False, free_only: bool = False) -> dict:
+def analyze_news_batch(news_list: list[dict], market: str = "kr", warmup: bool = False, free_only: bool = None) -> dict:
+    if free_only is None:
+        free_only = not _is_market_hours()  # 비장시간엔 자동으로 무료 모델 사용
     titles_text = "\n".join(f"{i+1}. {n['title']}" for i, n in enumerate(news_list))
     schedule_text = build_schedule_context() if market == "kr" else ""
     cache_key = _hash(titles_text + schedule_text + market)

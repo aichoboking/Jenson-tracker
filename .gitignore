@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+backend/debug_claude_raw.txt
+node_modules/
+*.json
+!package.json

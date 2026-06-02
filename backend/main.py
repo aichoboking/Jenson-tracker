@@ -710,11 +710,18 @@ def refresh_schedule() -> dict:
 def _warmup_feeds():
     for market in ("kr", "us"):
         try:
-            get_feeds(market=market)
-            print(f"[워밍업] {market.upper()} 피드 캐시 갱신 완료")
+            # 워밍업은 Claude만 사용해서 빠르게 캐시 채움
+            _cutoff, _, _ = _get_news_cutoff(market)
+            _72h = time.time() - 259200
+            if market == "kr":
+                news = get_jensen_news(cutoff=_72h)
+            else:
+                news = get_us_news(cutoff=_72h)
+            if news:
+                analyze_news_batch(news[:8], market=market, warmup=True)
+                print(f"[워밍업] {market.upper()} 캐시 갱신 완료")
         except Exception as e:
             print(f"[워밍업 에러] {market}: {e}")
-        time.sleep(30)  # KR/US 사이 Groq 속도 제한 방지
 
 def _background_schedule_loop():
     time.sleep(2)
@@ -1162,7 +1169,7 @@ def _update_daily_weather(market: str, result: dict) -> None:
         print(f"[일별날씨] {market.upper()} 캐시 유지 (갱신까지 {remain}분 남음)")
 
 
-def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
+def analyze_news_batch(news_list: list[dict], market: str = "kr", warmup: bool = False) -> dict:
     titles_text = "\n".join(f"{i+1}. {n['title']}" for i, n in enumerate(news_list))
     schedule_text = build_schedule_context() if market == "kr" else ""
     cache_key = _hash(titles_text + schedule_text + market)
@@ -1185,43 +1192,52 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
 
     result = fallback
     try:
-        # Claude + Groq 동시 시도 (Groq 한도 많음)
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
-            groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
-        try:
-            claude_result = claude_fut.result(timeout=20)
-        except Exception:
-            claude_result = None
-        try:
-            groq_result = groq_fut.result(timeout=10)
-        except Exception:
-            groq_result = None
-
-        # Groq 실패 시 Gemini 시도
-        if not groq_result:
-            gemini_result = _analyze_with_gemini(titles_text, schedule_text, market)
+        if warmup:
+            # 워밍업: Claude만 빠르게 캐시 채움
+            claude_result = _analyze_with_claude(titles_text, schedule_text, market)
+            if claude_result:
+                result = claude_result
+                result["aiMethod"] = "claude_only"
+                print(f"[워밍업] Claude 캐시 완료 ({market.upper()})")
+            else:
+                result = fallback
         else:
-            gemini_result = None
+            # 실사용: Claude + Groq 동시, 실패 시 Gemini
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
+                groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
+            try:
+                claude_result = claude_fut.result(timeout=20)
+            except Exception:
+                claude_result = None
+            try:
+                groq_result = groq_fut.result(timeout=10)
+            except Exception:
+                groq_result = None
 
-        secondary = groq_result or gemini_result
-        secondary_name = "Groq" if groq_result else ("Gemini" if gemini_result else None)
+            if not groq_result:
+                gemini_result = _analyze_with_gemini(titles_text, schedule_text, market)
+            else:
+                gemini_result = None
 
-        if claude_result and secondary:
-            result = _cross_validate(claude_result, secondary)
-            result["aiMethod"] = f"claude_{secondary_name.lower()}"
-            print(f"[분석] Claude × {secondary_name} 교차검증 완료 ({market.upper()})")
-        elif claude_result:
-            result = claude_result
-            result["aiMethod"] = "claude_only"
-            print(f"[분석] Claude 단독 분석 완료 ({market.upper()})")
-        elif secondary:
-            result = secondary
-            result["aiMethod"] = f"{secondary_name.lower()}_only"
-            print(f"[분석] {secondary_name} 단독 분석 완료 ({market.upper()})")
-        else:
-            result = fallback
-            print("[분석] 모든 AI 분석 실패 - 폴백 사용")
+            secondary = groq_result or gemini_result
+            secondary_name = "Groq" if groq_result else ("Gemini" if gemini_result else None)
+
+            if claude_result and secondary:
+                result = _cross_validate(claude_result, secondary)
+                result["aiMethod"] = f"claude_{secondary_name.lower()}"
+                print(f"[분석] Claude × {secondary_name} 교차검증 완료 ({market.upper()})")
+            elif claude_result:
+                result = claude_result
+                result["aiMethod"] = "claude_only"
+                print(f"[분석] Claude 단독 분석 완료 ({market.upper()})")
+            elif secondary:
+                result = secondary
+                result["aiMethod"] = f"{secondary_name.lower()}_only"
+                print(f"[분석] {secondary_name} 단독 분석 완료 ({market.upper()})")
+            else:
+                result = fallback
+                print("[분석] 모든 AI 분석 실패 - 폴백 사용")
     except Exception as e:
         print(f"[분석 에러] {e}")
         result = fallback

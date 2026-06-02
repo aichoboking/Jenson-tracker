@@ -53,6 +53,7 @@ def _initial_warmup():
     try:
         print("[서버] 초기 워밍업 시작...")
         refresh_schedule()
+        time.sleep(20)  # Claude 속도 제한 방지
         _warmup_feeds()
         print("[서버] 초기 워밍업 완료 - 요청 수락 시작")
     except Exception as e:
@@ -729,7 +730,7 @@ def refresh_schedule() -> dict:
 def _warmup_feeds():
     for i, market in enumerate(("kr", "us")):
         if i > 0:
-            time.sleep(10)  # KR→US 연속 호출로 Claude 속도 제한 방지
+            time.sleep(30)  # KR→US 연속 호출로 Claude 속도 제한 방지
         try:
             _cutoff, _, _ = _get_news_cutoff(market)
             _72h = time.time() - 259200

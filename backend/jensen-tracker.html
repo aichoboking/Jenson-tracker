@@ -857,10 +857,10 @@
     }
 
     function dualAiIndicator(aiMethod) {
-        if (aiMethod === "triple")
-            return `<div class="dual-ai-indicator active">🤖 Claude × ⚡ Groq × ✨ Gemini 3중 교차검증 완료</div>`;
-        if (aiMethod === "dual")
+        if (aiMethod === "claude_groq")
             return `<div class="dual-ai-indicator active">🤖 Claude × ⚡ Groq 교차검증 완료</div>`;
+        if (aiMethod === "claude_gemini")
+            return `<div class="dual-ai-indicator active">🤖 Claude × ✨ Gemini 교차검증 완료</div>`;
         if (aiMethod === "groq_only")
             return `<div class="dual-ai-indicator" style="opacity:.8">⚡ Groq 단독 분석</div>`;
         if (aiMethod === "gemini_only")
@@ -870,9 +870,10 @@
         return "";
     }
 
-    function guideBox(s) {
+    function guideBox(s, aiMethod) {
         const consensus = s.ai_consensus || {};
-        // 의견 불일치: Claude·Gemini 각각 표시
+        const secondaryName = aiMethod === "claude_gemini" ? "✨ Gemini" : "⚡ Groq";
+        // 의견 불일치: Claude·보조AI 각각 표시
         if (consensus.method === "downgraded" && consensus.claude_guide && consensus.gemini_guide) {
             return `
             <div class="sgc-guide-box">
@@ -883,19 +884,19 @@
                         <span class="sgc-guide-text">${consensus.claude_guide}</span>
                     </div>
                     <div class="sgc-guide-view gemini-view">
-                        <span class="sgc-guide-view-label">✨ Groq 시선</span>
+                        <span class="sgc-guide-view-label">${secondaryName} 시선</span>
                         <span class="sgc-guide-text">${consensus.gemini_guide}</span>
                     </div>
                 </div>
             </div>`;
         }
-        // 만장일치: 가이드 아래에 Groq 동의 한 줄 표시
+        // 만장일치: 가이드 아래에 보조AI 동의 한 줄 표시
         if (consensus.method === "unanimous" && consensus.gemini) {
             return `
             <div class="sgc-guide-box">
                 <span class="sgc-guide-label">💡 AI 투자 전망 가이드</span>
                 <span class="sgc-guide-text">${s.investment_guide || "분석 데이터 없음"}</span>
-                <div style="margin-top:6px;font-size:11px;color:#00b860;opacity:.85">✨ Groq 동의: ${consensus.gemini}</div>
+                <div style="margin-top:6px;font-size:11px;color:#00b860;opacity:.85">${secondaryName} 동의: ${consensus.gemini}</div>
             </div>`;
         }
         return `
@@ -1055,7 +1056,7 @@
     }
 
     /* ── 뉴스 피드 렌더링 ── */
-    function buildCard(item, isFallback = false) {
+    function buildCard(item, isFallback = false, aiMethod = "") {
         const stockCards = (item.stocks || []).map(s => {
             const url = stockUrl(s);
             return `
@@ -1067,7 +1068,7 @@
                     </a>
                     ${statusBadge(s.investment_status)}${consensusBadge(s.ai_consensus)}
                 </div>
-                ${guideBox(s)}
+                ${guideBox(s, aiMethod)}
             </div>`;
         }).join("");
 
@@ -1114,7 +1115,7 @@
             html += `<div class="feed-subsection-header">
                 <span>💡 실시간 오늘 레이더</span>
             </div>`;
-            html += todayItems.map(item => buildCard(item, false)).join("");
+            html += todayItems.map(item => buildCard(item, false, data.aiMethod)).join("");
         }
 
         // 전일 보충 섹션
@@ -1122,7 +1123,7 @@
             html += `<div class="feed-subsection-header fallback-header" style="margin-top:${todayItems.length ? 28 : 0}px">
                 <span>⏳ 참고용 전일 리포트</span>
             </div>`;
-            html += fallbackItems.map(item => buildCard(item, true)).join("");
+            html += fallbackItems.map(item => buildCard(item, true, data.aiMethod)).join("");
         }
 
         document.getElementById("feedContainer").innerHTML = html;

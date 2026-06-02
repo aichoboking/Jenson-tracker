@@ -1209,7 +1209,7 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
 
         if claude_result and secondary:
             result = _cross_validate(claude_result, secondary)
-            result["aiMethod"] = "dual"
+            result["aiMethod"] = f"claude_{secondary_name.lower()}"
             print(f"[분석] Claude × {secondary_name} 교차검증 완료 ({market.upper()})")
         elif claude_result:
             result = claude_result

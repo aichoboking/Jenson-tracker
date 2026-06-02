@@ -850,10 +850,10 @@
     function consensusBadge(consensus) {
         if (!consensus || !consensus.method) return "";
         if (consensus.method === "unanimous")
-            return `<span class="ai-badge unanimous" title="Claude: ${consensus.claude} / Gemini: ${consensus.gemini}">🤝 만장일치</span>`;
+            return `<span class="ai-badge unanimous" title="Claude: ${consensus.claude} / Groq: ${consensus.gemini}">🤝 만장일치</span>`;
         if (consensus.method === "downgraded")
-            return `<span class="ai-badge downgraded" title="Claude: ${consensus.claude} → Gemini: ${consensus.gemini} → 보수적 하향">⚠️ 의견불일치</span>`;
-        return `<span class="ai-badge claude-only" title="Gemini 분석 없음">🤖 Claude</span>`;
+            return `<span class="ai-badge downgraded" title="Claude: ${consensus.claude} → Groq: ${consensus.gemini} → 보수적 하향">⚠️ 의견불일치</span>`;
+        return `<span class="ai-badge claude-only" title="Groq 분석 없음">🤖 Claude</span>`;
     }
 
     function dualAiIndicator(aiMethod) {
@@ -879,19 +879,19 @@
                         <span class="sgc-guide-text">${consensus.claude_guide}</span>
                     </div>
                     <div class="sgc-guide-view gemini-view">
-                        <span class="sgc-guide-view-label">✨ Gemini 시선</span>
+                        <span class="sgc-guide-view-label">✨ Groq 시선</span>
                         <span class="sgc-guide-text">${consensus.gemini_guide}</span>
                     </div>
                 </div>
             </div>`;
         }
-        // 만장일치: 가이드 아래에 Gemini 동의 한 줄 표시
+        // 만장일치: 가이드 아래에 Groq 동의 한 줄 표시
         if (consensus.method === "unanimous" && consensus.gemini) {
             return `
             <div class="sgc-guide-box">
                 <span class="sgc-guide-label">💡 AI 투자 전망 가이드</span>
                 <span class="sgc-guide-text">${s.investment_guide || "분석 데이터 없음"}</span>
-                <div style="margin-top:6px;font-size:11px;color:#00b860;opacity:.85">✨ Gemini 동의: ${consensus.gemini}</div>
+                <div style="margin-top:6px;font-size:11px;color:#00b860;opacity:.85">✨ Groq 동의: ${consensus.gemini}</div>
             </div>`;
         }
         return `

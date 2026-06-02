@@ -1115,7 +1115,7 @@ def _cross_validate(claude_result: dict, gemini_result: dict) -> dict:
     # jacketIndex가 보수적으로 하향된 경우 weatherReason 보완
     if final_idx < c_idx:
         claude_result["weatherReason"] = (
-            claude_result.get("weatherReason", "") + " (Gemini 교차검증 후 하향)"
+            claude_result.get("weatherReason", "") + " (Groq 교차검증 후 하향)"
         ).strip()
 
     return claude_result

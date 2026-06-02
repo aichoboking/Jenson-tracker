@@ -1252,15 +1252,36 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr", warmup: bool =
 
     result = fallback
     try:
+        tag = "워밍업" if warmup else "분석"
         if free_only:
-            # 비장시간 워밍업: OpenRouter → Groq 순으로 무료 모델만 사용
-            claude_result = None
-            groq_result = None
-            openrouter_result = _analyze_with_openrouter(titles_text, schedule_text, market)
-            if not openrouter_result:
-                groq_result = _analyze_with_groq(titles_text, schedule_text, market)
-            secondary = openrouter_result or groq_result
-            secondary_name = "OpenRouter" if openrouter_result else ("Groq" if groq_result else None)
+            # 비장시간: OpenRouter × Groq 병렬 교차검증 (무료)
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                or_fut = ex.submit(_analyze_with_openrouter, titles_text, schedule_text, market)
+                groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
+            try:
+                primary = or_fut.result(timeout=30)
+            except Exception:
+                primary = None
+            try:
+                secondary = groq_fut.result(timeout=10)
+            except Exception:
+                secondary = None
+
+            if primary and secondary:
+                result = _cross_validate(primary, secondary)
+                result["aiMethod"] = "openrouter_groq"
+                print(f"[{tag}] OpenRouter × Groq 교차검증 완료 ({market.upper()})")
+            elif primary:
+                result = primary
+                result["aiMethod"] = "openrouter_only"
+                print(f"[{tag}] OpenRouter 단독 완료 ({market.upper()})")
+            elif secondary:
+                result = secondary
+                result["aiMethod"] = "groq_only"
+                print(f"[{tag}] Groq 단독 완료 ({market.upper()})")
+            else:
+                result = fallback
+                print(f"[{tag}] 무료 AI 모두 실패 - 폴백 ({market.upper()})")
         else:
             # 장시간: Claude + Groq 병렬 실행
             with ThreadPoolExecutor(max_workers=2) as ex:
@@ -1290,28 +1311,21 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr", warmup: bool =
                 ("Gemini" if gemini_result else None)
             )
 
-        secondary = groq_result or openrouter_result or gemini_result
-        secondary_name = (
-            "Groq" if groq_result else
-            "OpenRouter" if openrouter_result else
-            ("Gemini" if gemini_result else None)
-        )
-
-        if claude_result and secondary:
-            result = _cross_validate(claude_result, secondary)
-            result["aiMethod"] = f"claude_{secondary_name.lower()}"
-            print(f"[{'워밍업' if warmup else '분석'}] Claude × {secondary_name} 교차검증 완료 ({market.upper()})")
-        elif claude_result:
-            result = claude_result
-            result["aiMethod"] = "claude_only"
-            print(f"[{'워밍업' if warmup else '분석'}] Claude 단독 완료 ({market.upper()})")
-        elif secondary:
-            result = secondary
-            result["aiMethod"] = f"{secondary_name.lower()}_only"
-            print(f"[{'워밍업' if warmup else '분석'}] {secondary_name} 단독 완료 ({market.upper()})")
-        else:
-            result = fallback
-            print(f"[{'워밍업' if warmup else '분석'}] 모든 AI 실패 - 폴백 사용 ({market.upper()})")
+            if claude_result and secondary:
+                result = _cross_validate(claude_result, secondary)
+                result["aiMethod"] = f"claude_{secondary_name.lower()}"
+                print(f"[{tag}] Claude × {secondary_name} 교차검증 완료 ({market.upper()})")
+            elif claude_result:
+                result = claude_result
+                result["aiMethod"] = "claude_only"
+                print(f"[{tag}] Claude 단독 완료 ({market.upper()})")
+            elif secondary:
+                result = secondary
+                result["aiMethod"] = f"{secondary_name.lower()}_only"
+                print(f"[{tag}] {secondary_name} 단독 완료 ({market.upper()})")
+            else:
+                result = fallback
+                print(f"[{tag}] 모든 AI 실패 - 폴백 ({market.upper()})")
     except Exception as e:
         print(f"[분석 에러] {e}")
         result = fallback

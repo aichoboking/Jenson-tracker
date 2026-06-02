@@ -1,6 +1,8 @@
 import os
 import json
 import math
+import socket
+socket.setdefaulttimeout(10)  # RSS 피드·외부 HTTP 최대 10초 대기
 from dotenv import load_dotenv
 load_dotenv()
 import time
@@ -778,35 +780,38 @@ _KR_QUERY_BUCKETS = [
 
 
 def get_jensen_news(cutoff: float = 0.0) -> list[dict]:
-    """cutoff(UTC epoch) 이후 발행된 국장 뉴스 멀티버킷 수집."""
-    def entry_to_dict(entry) -> dict:
-        pub_ts = _pub_ts_utc(entry)
-        return {
-            "title": entry.get("title", ""),
-            "link": entry.get("link", ""),
-            "pubDate": entry.get("published", ""),
-            "pubTs": pub_ts,
-        }
-
-    seen: set[str] = set()
-    result: list[dict] = []
-    for raw_q in _KR_QUERY_BUCKETS:
+    """cutoff(UTC epoch) 이후 발행된 국장 뉴스 멀티버킷 병렬 수집."""
+    def fetch_bucket(raw_q: str) -> list[dict]:
         rss_url = f"https://news.google.com/rss/search?q={quote(raw_q)}&hl=ko&gl=KR&ceid=KR:ko"
         try:
             feed = feedparser.parse(rss_url)
         except Exception:
-            continue
-        for e in feed.entries[:30]:
-            if _pub_ts_utc(e) < cutoff:
-                continue
-            key = e.get("title", "")[:50].lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            result.append(entry_to_dict(e))
+            return []
+        return [
+            {"title": e.get("title", ""), "link": e.get("link", ""),
+             "pubDate": e.get("published", ""), "pubTs": _pub_ts_utc(e)}
+            for e in feed.entries[:30]
+            if _pub_ts_utc(e) >= cutoff and e.get("title")
+        ]
 
-    result.sort(key=lambda x: -x["pubTs"])
-    print(f"[국장뉴스] cutoff 필터 후 {len(result)}개 (버킷 {len(_KR_QUERY_BUCKETS)}개)")
+    with ThreadPoolExecutor(max_workers=len(_KR_QUERY_BUCKETS)) as ex:
+        futs = [ex.submit(fetch_bucket, q) for q in _KR_QUERY_BUCKETS]
+        all_entries = []
+        for f in as_completed(futs):
+            try:
+                all_entries.extend(f.result(timeout=12))
+            except Exception:
+                pass
+
+    seen: set[str] = set()
+    result: list[dict] = []
+    for item in sorted(all_entries, key=lambda x: -x["pubTs"]):
+        key = item["title"][:50].lower()
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
+
+    print(f"[국장뉴스] cutoff 필터 후 {len(result)}개 (버킷 {len(_KR_QUERY_BUCKETS)}개 병렬)")
     return result
 
 
@@ -829,51 +834,40 @@ _US_QUERY_BUCKETS = [
 
 
 def get_us_news(cutoff: float = 0.0) -> list[dict]:
-    """cutoff(UTC epoch) 이후 발행된 미장 뉴스 멀티버킷 수집."""
-    def entry_to_dict(entry) -> dict:
-        pub_ts = _pub_ts_utc(entry)
-        return {
-            "title": entry.get("title", ""),
-            "link": entry.get("link", ""),
-            "pubDate": entry.get("published", ""),
-            "pubTs": pub_ts,
-        }
-
-    seen_titles: set[str] = set()
-    bucket_results: list[list[dict]] = []
-
-    for raw_q in _US_QUERY_BUCKETS:
+    """cutoff(UTC epoch) 이후 발행된 미장 뉴스 멀티버킷 병렬 수집."""
+    def fetch_bucket(raw_q: str) -> list[dict]:
         rss_url = f"https://news.google.com/rss/search?q={quote(raw_q)}&hl=en&gl=US&ceid=US:en"
         try:
             feed = feedparser.parse(rss_url)
         except Exception:
-            bucket_results.append([])
-            continue
-        bucket: list[dict] = []
-        for e in feed.entries[:15]:
-            if _pub_ts_utc(e) < cutoff:
-                continue
-            title = e.get("title", "")
-            key = title[:50].lower()
-            if key in seen_titles:
-                continue
-            seen_titles.add(key)
-            bucket.append(entry_to_dict(e))
-        bucket_results.append(bucket)
+            return []
+        return [
+            {"title": e.get("title", ""), "link": e.get("link", ""),
+             "pubDate": e.get("published", ""), "pubTs": _pub_ts_utc(e)}
+            for e in feed.entries[:15]
+            if _pub_ts_utc(e) >= cutoff and e.get("title")
+        ]
 
+    with ThreadPoolExecutor(max_workers=len(_US_QUERY_BUCKETS)) as ex:
+        futs = [ex.submit(fetch_bucket, q) for q in _US_QUERY_BUCKETS]
+        bucket_results: list[list[dict]] = []
+        for f in futs:
+            try:
+                bucket_results.append(f.result(timeout=12))
+            except Exception:
+                bucket_results.append([])
+
+    seen_titles: set[str] = set()
     result: list[dict] = []
     for bucket in bucket_results:
-        result.extend(sorted(bucket, key=lambda x: -x["pubTs"])[:3])
+        for item in sorted(bucket, key=lambda x: -x["pubTs"])[:3]:
+            key = item["title"][:50].lower()
+            if key not in seen_titles:
+                seen_titles.add(key)
+                result.append(item)
 
-    final_seen: set[str] = set()
-    deduped: list[dict] = []
-    for item in sorted(result, key=lambda x: -x["pubTs"]):
-        key = item["title"][:50].lower()
-        if key not in final_seen:
-            final_seen.add(key)
-            deduped.append(item)
-
-    print(f"[미장뉴스] cutoff 필터 후 {len(deduped)}개 (버킷 {len(_US_QUERY_BUCKETS)}개)")
+    deduped = sorted(result, key=lambda x: -x["pubTs"])
+    print(f"[미장뉴스] cutoff 필터 후 {len(deduped)}개 (버킷 {len(_US_QUERY_BUCKETS)}개 병렬)")
     return deduped
 
 

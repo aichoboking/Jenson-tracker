@@ -1182,6 +1182,32 @@
             </div>`;
     }
 
+    /* ── stale-while-revalidate 캐시 & 자동 재시도 ── */
+    const lastGoodData = { kr: null, us: null };
+    let retryTimer = null;
+
+    function scheduleRetry() {
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => loadFeeds(true), 10000);
+    }
+    function clearRetry() {
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    }
+
+    function showStaleBanner() {
+        const existing = document.getElementById("staleBanner");
+        if (existing) return;
+        const banner = document.createElement("div");
+        banner.id = "staleBanner";
+        banner.style.cssText = "background:#1a1a2e;border:1px solid #3a3a5c;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#8888aa;text-align:center";
+        banner.innerHTML = "⏳ AI 분석 업데이트 중... 잠시 후 자동 갱신됩니다";
+        document.getElementById("feedContainer").prepend(banner);
+    }
+    function hideStaleBanner() {
+        const el = document.getElementById("staleBanner");
+        if (el) el.remove();
+    }
+
     /* ── 메인 로드 ── */
     async function loadFeeds(force = false) {
         if (busy) return;
@@ -1189,7 +1215,9 @@
         const btn = document.getElementById("refreshBtn");
         btn.classList.add("loading");
         btn.textContent = "⏳ 분석 중...";
-        renderLoading();
+
+        // stale-while-revalidate: 이전 데이터 있으면 스켈레톤 없이 유지
+        if (!lastGoodData[currentMarket]) renderLoading();
 
         try {
             const ts  = force ? `t=${Date.now()}&` : "";
@@ -1197,11 +1225,35 @@
             const res = await fetch(url);
             if (!res.ok) throw new Error(`서버 오류 ${res.status}`);
             const data = await res.json();
-            if (currentMarket === "kr") renderSchedule(data);
-            renderWeather(data);   // data.marketWeather / weatherReason / dailyStrategy / jacketIndex
-            renderFeeds(data);     // data.items[].aiSummary / stocks[].name,code,appeal,change
+
+            if (data.aiMethod === "fallback") {
+                if (lastGoodData[currentMarket]) {
+                    // 이전 데이터 보여주고 배너 + 자동 재시도
+                    const stale = lastGoodData[currentMarket];
+                    if (currentMarket === "kr") renderSchedule(stale);
+                    renderWeather(stale);
+                    renderFeeds(stale);
+                    showStaleBanner();
+                } else {
+                    // 처음 접속인데 fallback → 로딩 화면 유지
+                    renderLoading();
+                }
+                scheduleRetry();
+            } else {
+                clearRetry();
+                hideStaleBanner();
+                lastGoodData[currentMarket] = data;
+                if (currentMarket === "kr") renderSchedule(data);
+                renderWeather(data);
+                renderFeeds(data);
+            }
         } catch (e) {
-            renderError(e.message);
+            if (lastGoodData[currentMarket]) {
+                showStaleBanner();
+                scheduleRetry();
+            } else {
+                renderError(e.message);
+            }
         } finally {
             busy = false;
             btn.classList.remove("loading");

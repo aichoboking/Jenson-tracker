@@ -416,7 +416,7 @@ _analysis_cache: dict = {}
 _stock_cache: dict = {}
 
 FEEDS_TTL = 600
-ANALYSIS_TTL = 3600
+ANALYSIS_TTL = 21600
 STOCK_TTL = 60
 DAILY_WEATHER_TTL = 10800  # 3시간 — 총합 날씨 최소 고정 시간
 
@@ -878,7 +878,7 @@ def _analyze_with_claude(titles_text: str, schedule_text: str, market: str = "kr
         return None
 
 
-_GEMINI_MODEL_CHAIN = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
+_GEMINI_MODEL_CHAIN = ["gemini-2.0-flash"]
 # 마지막 성공한 Gemini 분석 결과 캐시 (503 과부하 시 재사용)
 _gemini_last_ok: dict = {"kr": None, "us": None}
 

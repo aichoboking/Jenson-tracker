@@ -963,8 +963,7 @@ def _analyze_with_groq(titles_text: str, schedule_text: str, market: str = "kr")
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "rate" in err_str.lower():
-                print(f"[Groq:{model}] 속도 제한 → 20초 후 재시도")
-                time.sleep(20)
+                print(f"[Groq:{model}] 속도 제한 → 다음 모델 시도")
                 continue
             print(f"[Groq 분석 에러] {e}")
             return None

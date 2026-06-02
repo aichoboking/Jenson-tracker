@@ -712,7 +712,6 @@ def refresh_schedule() -> dict:
 def _warmup_feeds():
     for market in ("kr", "us"):
         try:
-            # 워밍업은 Claude만 사용해서 빠르게 캐시 채움
             _cutoff, _, _ = _get_news_cutoff(market)
             _72h = time.time() - 259200
             if market == "kr":
@@ -720,7 +719,7 @@ def _warmup_feeds():
             else:
                 news = get_us_news(cutoff=_72h)
             if news:
-                analyze_news_batch(news[:8], market=market, warmup=True)
+                analyze_news_batch(news[:8], market=market)
                 print(f"[워밍업] {market.upper()} 캐시 갱신 완료")
         except Exception as e:
             print(f"[워밍업 에러] {market}: {e}")

@@ -1214,8 +1214,8 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
         print(f"[분석 에러] {e}")
         result = fallback
 
-    _analysis_cache[cache_key] = {"result": result, "ts": time.time()}
     if result.get("aiMethod") != "fallback":
+        _analysis_cache[cache_key] = {"result": result, "ts": time.time()}
         _update_daily_weather(market, result)
     return result
 

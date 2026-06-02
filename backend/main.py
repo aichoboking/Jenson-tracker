@@ -1185,24 +1185,33 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
 
     result = fallback
     try:
-        with ThreadPoolExecutor(max_workers=2) as ex:
+        with ThreadPoolExecutor(max_workers=3) as ex:
             claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
             groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
+            gemini_fut = ex.submit(_analyze_with_gemini, titles_text, schedule_text, market)
         claude_result = claude_fut.result()
         groq_result = groq_fut.result()
+        gemini_result = gemini_fut.result()
 
-        if claude_result and groq_result:
-            result = _cross_validate(claude_result, groq_result)
-            result["aiMethod"] = "dual"
-            print(f"[분석] Claude × Groq 교차검증 완료 ({market.upper()})")
-        elif claude_result:
-            result = claude_result
-            result["aiMethod"] = "claude_only"
-            print(f"[분석] Claude 단독 분석 완료 ({market.upper()})")
-        elif groq_result:
-            result = groq_result
-            result["aiMethod"] = "groq_only"
-            print(f"[분석] Groq 단독 분석 완료 ({market.upper()})")
+        available = [r for r in [claude_result, groq_result, gemini_result] if r]
+        names = [n for n, r in [("Claude", claude_result), ("Groq", groq_result), ("Gemini", gemini_result)] if r]
+
+        if len(available) >= 2:
+            base = claude_result if claude_result else available[0]
+            secondary = next(r for r in [groq_result, gemini_result, claude_result] if r and r is not base)
+            result = _cross_validate(base, secondary)
+            if len(available) == 3:
+                scores = [r.get("jacketIndex", 3) for r in available]
+                result["jacketIndex"] = round(sum(scores) / len(scores))
+                result["marketWeather"] = JACKET_WEATHER_MAP.get(result["jacketIndex"], "🌥️흐림")
+                result["aiMethod"] = "triple"
+            else:
+                result["aiMethod"] = "dual"
+            print(f"[분석] {' × '.join(names)} 교차검증 완료 ({market.upper()})")
+        elif len(available) == 1:
+            result = available[0]
+            result["aiMethod"] = f"{names[0].lower()}_only"
+            print(f"[분석] {names[0]} 단독 분석 완료 ({market.upper()})")
         else:
             result = fallback
             print("[분석] 모든 AI 분석 실패 - 폴백 사용")

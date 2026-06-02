@@ -64,8 +64,8 @@ async def lifespan(app: FastAPI):
     import asyncio
     loop = asyncio.get_event_loop()
     try:
-        # 요청 받기 전에 첫 워밍업 완료 (최대 60초)
-        await asyncio.wait_for(loop.run_in_executor(None, _initial_warmup), timeout=60)
+        # 요청 받기 전에 첫 워밍업 완료 (최대 120초)
+        await asyncio.wait_for(loop.run_in_executor(None, _initial_warmup), timeout=120)
     except asyncio.TimeoutError:
         print("[서버] 초기 워밍업 타임아웃 - 서버 시작 진행")
     t = threading.Thread(target=_background_schedule_loop, daemon=True)

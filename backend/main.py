@@ -447,7 +447,7 @@ _analysis_cache: dict = {}
 _stock_cache: dict = {}
 
 FEEDS_TTL = 600
-ANALYSIS_TTL = 21600
+ANALYSIS_TTL = 10800
 STOCK_TTL = 60
 DAILY_WEATHER_TTL = 10800  # 3시간 — 총합 날씨 최소 고정 시간
 

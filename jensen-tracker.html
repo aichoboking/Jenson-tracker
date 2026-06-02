@@ -1039,12 +1039,10 @@
                     강도가 높을수록 시장 날씨가 <span>☀️맑음</span>에 가까워지고, 낮을수록 <span>🌧️비</span>로 흐려져요.
                 </div>
                 ${(()=>{
-                    const n = data.weatherSampleCount || 0;
                     const upd = data.weatherUpdatedAt
                         ? new Date(data.weatherUpdatedAt*1000).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})
                         : null;
-                    if (!n) return '';
-                    return `<div class="weather-sample-info">📊 오늘 <em>${n}회</em> 분석 누적 이동 평균${upd ? ` · <em>${upd}</em> 확정 (3시간 고정)` : ''}</div>`;
+                    return upd ? `<div class="weather-sample-info">📊 <em>${upd}</em> 기준 분석</div>` : '';
                 })()}
                 ${dualAiIndicator(data.aiMethod)}
             </div>`;

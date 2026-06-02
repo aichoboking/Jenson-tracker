@@ -1081,23 +1081,21 @@ def _update_daily_weather(market: str, result: dict) -> None:
 
     now = time.time()
     elapsed = now - store["ts"]
-    if store["ts"] == 0.0 or elapsed >= DAILY_WEATHER_TTL:
+    is_hojai = new_score >= 4  # 호재 감지 (jacketIndex 4~5)
+    should_update = store["ts"] == 0.0 or elapsed >= DAILY_WEATHER_TTL or is_hojai
+
+    if should_update:
         store["jacketIndex"] = avg_score
         store["marketWeather"] = JACKET_WEATHER_MAP[avg_score]
         store["weatherReason"] = result.get("weatherReason", "")
         store["dailyStrategy"] = result.get("dailyStrategy", "")
         store["ts"] = now
         _weather_label = JACKET_WEATHER_MAP[avg_score].encode("ascii", "replace").decode()
-        print(
-            f"[일별날씨] {market.upper()} 총합 확정 -> {avg_score}/5 "
-            f"({_weather_label}) | 샘플 {len(store['scores'])}개"
-        )
+        reason = "호재 감지 즉시 반영" if is_hojai else "주기 갱신"
+        print(f"[일별날씨] {market.upper()} -> {avg_score}/5 ({_weather_label}) | {reason}")
     else:
         remain = int((DAILY_WEATHER_TTL - elapsed) / 60)
-        print(
-            f"[일별날씨] {market.upper()} 캐시 유지 "
-            f"(갱신까지 {remain}분 남음, 현재 {store['jacketIndex']}/5)"
-        )
+        print(f"[일별날씨] {market.upper()} 캐시 유지 (갱신까지 {remain}분 남음)")
 
 
 def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:

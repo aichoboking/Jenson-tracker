@@ -940,7 +940,7 @@ def _analyze_with_gemini(titles_text: str, schedule_text: str, market: str = "kr
             err_str = str(e)
             if "503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str:
                 overload_count += 1
-                print(f"[Gemini:{model}] {market.upper()} 과부하 → 다음 모델 시도")
+                print(f"[Gemini:{model}] {market.upper()} 과부하({err_str[:120]}) → 다음 모델 시도")
                 continue
             print(f"[Gemini 분석 에러] {e}")
             return None

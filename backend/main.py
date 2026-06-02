@@ -26,10 +26,26 @@ try:
 except ImportError:
     _GEMINI_LIB_OK = False
 
+def _keep_alive_loop():
+    import urllib.request
+    render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
+    if not render_url:
+        return
+    time.sleep(60)
+    while True:
+        try:
+            urllib.request.urlopen(f"{render_url}/api/health", timeout=10)
+            print("[워밍업] 슬립 방지 핑 완료")
+        except Exception:
+            pass
+        time.sleep(840)  # 14분마다 핑
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     t = threading.Thread(target=_background_schedule_loop, daemon=True)
     t.start()
+    t2 = threading.Thread(target=_keep_alive_loop, daemon=True)
+    t2.start()
     print("[서버] 일정 자동 갱신 루프 시작 (1시간 주기)")
     yield
 

@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧥 젠슨 트래커</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: #0d0d10;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+        }
+        .container { max-width: 660px; margin: 0 auto; padding: 24px 20px; }
+
+        /* ── 헤더 ── */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #1e1e26;
+            margin-bottom: 28px;
+        }
+        h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
+        .subtitle { font-size: 13px; color: #555562; margin-top: 4px; }
+        .refresh-btn {
+            background: #18181f;
+            border: 1px solid #2a2a38;
+            color: #6a6a7a;
+            padding: 7px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .refresh-btn:hover { background: #2a2a38; color: #fff; border-color: #3a3a50; }
+        .refresh-btn.loading { opacity: 0.4; cursor: not-allowed; }
+
+        /* ── 마켓 탭 스위치 ── */
+        .market-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            background: #0f0f14;
+            border: 1px solid #1e1e28;
+            border-radius: 16px;
+            padding: 5px;
+        }
+        .market-tab {
+            flex: 1;
+            padding: 10px 0;
+            border: none;
+            border-radius: 12px;
+            background: transparent;
+            color: #44445a;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+            letter-spacing: 0.2px;
+        }
+        .market-tab:hover { color: #8888aa; }
+        .market-tab.active-kr {
+            background: linear-gradient(135deg, #1e3a6e 0%, #152a52 100%);
+            color: #7eb8ff;
+            box-shadow: 0 2px 8px rgba(80,140,255,0.15);
+        }
+        .market-tab.active-us {
+            background: linear-gradient(135deg, #3a1e1e 0%, #2a1510 100%);
+            color: #ffaa55;
+            box-shadow: 0 2px 8px rgba(255,140,60,0.15);
+        }
+        /* 탭 전환 시 피드 영역 페이드 */
+        #feedContainer { transition: opacity 0.2s; }
+        #feedContainer.fading { opacity: 0; }
+
+        /* ── 기상청 위젯 ── */
+        .weather-widget {
+            background: linear-gradient(145deg, #13131c 0%, #0e1220 100%);
+            border: 1px solid #22223a;
+            border-radius: 20px;
+            padding: 28px 24px 22px;
+            margin-bottom: 28px;
+            position: relative;
+            overflow: hidden;
+        }
+        .weather-widget::before {
+            content: "";
+            position: absolute;
+            top: -60px; right: -60px;
+            width: 200px; height: 200px;
+            background: radial-gradient(circle, rgba(99,102,241,0.07) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .widget-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #4a4a62;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .radar-clock {
+            font-size: 11px;
+            font-weight: 600;
+            color: #3a3a5a;
+            letter-spacing: 0.5px;
+            font-variant-numeric: tabular-nums;
+        }
+        .radar-clock-dot {
+            display: inline-block;
+            width: 5px; height: 5px;
+            background: #00ff88;
+            border-radius: 50%;
+            margin-right: 5px;
+            animation: blink 1.2s ease-in-out infinite;
+            vertical-align: middle;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.2; }
+        }
+        .weather-main {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            margin-bottom: 20px;
+        }
+        .weather-emoji-big { font-size: 64px; line-height: 1; flex-shrink: 0; }
+        .weather-right { flex: 1; }
+        .weather-status {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+        .weather-reason { font-size: 13px; color: #6a6a82; line-height: 1.55; }
+
+        .strategy-box {
+            background: rgba(0, 255, 136, 0.04);
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            border-radius: 12px;
+            padding: 14px 18px;
+            margin-bottom: 18px;
+        }
+        .strategy-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #00ff88;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            margin-bottom: 7px;
+        }
+        .strategy-text {
+            font-size: 14px;
+            color: #c8ffe8;
+            line-height: 1.6;
+            font-weight: 500;
+        }
+
+        .jacket-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding-top: 16px;
+            border-top: 1px solid #1a1a26;
+        }
+        .jacket-label { font-size: 12px; color: #44445a; }
+        .jacket-icons { font-size: 16px; letter-spacing: 2px; }
+        .jacket-score-text { font-size: 12px; color: #44445a; margin-left: auto; }
+
+        /* ── 섹션 헤더 ── */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #55556a;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .last-updated { font-size: 12px; color: #33333f; }
+
+        /* ── 피드 서브섹션 ── */
+        .feed-subsection-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 20px 0 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #1e1e28;
+        }
+        .feed-subsection-header span {
+            font-size: 12px;
+            font-weight: 700;
+            color: #55556a;
+            letter-spacing: 0.5px;
+        }
+        .feed-subsection-header.fallback-header span { color: #44445a; }
+        /* 전일 카드: 불투명도 낮춤 */
+        .card-fallback {
+            opacity: 0.72;
+            border-color: #1a1a22;
+        }
+        .card-fallback:hover { opacity: 0.92; }
+        .fallback-badge {
+            display: inline-block;
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 20px;
+            background: #1e1e28;
+            color: #55556a;
+            font-weight: 600;
+            vertical-align: middle;
+            margin-left: 6px;
+        }
+
+        /* ── 뉴스 카드 ── */
+        .card {
+            background: #13131a;
+            border: 1px solid #1e1e28;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 14px;
+            transition: border-color 0.2s, transform 0.15s;
+        }
+        .card:hover { border-color: #2e2e40; transform: translateY(-1px); }
+        .card-pinned {
+            border-color: rgba(255, 160, 30, 0.35);
+            background: linear-gradient(135deg, #15130f 0%, #13131a 60%);
+        }
+        .card-pinned:hover { border-color: rgba(255,160,30,0.55); }
+        .pinned-badge {
+            display: inline-flex; align-items: center;
+            margin-left: 8px; padding: 1px 8px;
+            background: rgba(255,140,0,0.12); color: #ffaa00;
+            border: 1px solid rgba(255,140,0,0.3); border-radius: 20px;
+            font-size: 10px; font-weight: 700;
+        }
+        .impact-score {
+            display: inline-flex; align-items: center;
+            margin-left: 8px; padding: 1px 7px;
+            background: rgba(100,120,180,0.1); color: #6080c0;
+            border: 1px solid rgba(100,120,180,0.25); border-radius: 20px;
+            font-size: 10px;
+        }
+        .time-text { font-size: 11px; color: #3a3a4a; margin-bottom: 9px; }
+        .card-title {
+            font-size: 15px;
+            font-weight: 700;
+            line-height: 1.5;
+            color: #e8e8f0;
+            display: block;
+            text-decoration: none;
+            margin-bottom: 14px;
+        }
+        .card-title:hover { color: #7eb8ff; }
+
+        .article-link {
+            display: inline-flex; align-items: center;
+            margin-top: 12px; padding: 6px 14px;
+            background: rgba(80,120,220,0.08);
+            border: 1px solid rgba(80,120,220,0.22);
+            border-radius: 20px;
+            font-size: 12px; font-weight: 600;
+            color: #6090d0; text-decoration: none;
+            transition: background 0.15s, color 0.15s;
+        }
+        .article-link:hover {
+            background: rgba(80,120,220,0.16);
+            color: #90b8ff;
+        }
+
+        .ai-brief-box {
+            background: #0f0f16;
+            border-radius: 10px;
+            padding: 13px 15px;
+            margin-bottom: 14px;
+        }
+        .ai-brief-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #3a9a6a;
+            letter-spacing: 0.6px;
+            margin-bottom: 6px;
+        }
+        .ai-brief-text { font-size: 13px; color: #8a8a9e; line-height: 1.6; }
+
+        .stock-section-title {
+            font-size: 11px;
+            color: #3a3a4e;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        .change-up   { color: #ff5555; font-size: 12px; font-weight: 700; }
+        .change-down { color: #5599ff; font-size: 12px; font-weight: 700; }
+        .change-flat { color: #44445a; font-size: 12px; font-weight: 700; }
+
+        /* ── 종목 가이드 카드 ── */
+        .stock-guide-card {
+            background: #0f0f18;
+            border: 1px solid #22223a;
+            border-radius: 14px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+        }
+        .sgc-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            gap: 10px;
+        }
+        .sgc-name-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            flex: 1;
+            min-width: 0;
+        }
+        .sgc-name-link:hover .stock-name { color: #7eb8ff; }
+        .stock-name { color: #e0e0f0; font-size: 14px; font-weight: 700; transition: color 0.2s; }
+
+        .badge {
+            font-size: 11px;
+            font-weight: 800;
+            padding: 4px 10px;
+            border-radius: 20px;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .badge-strong { background: rgba(0,200,80,0.15);  color: #00d870; border: 1px solid rgba(0,200,80,0.35); }
+        .badge-watch  { background: rgba(255,200,0,0.12); color: #ffcc00; border: 1px solid rgba(255,200,0,0.3); }
+        .badge-hot    { background: rgba(255,60,60,0.13); color: #ff5050; border: 1px solid rgba(255,60,60,0.3); }
+
+        /* ── 신규포착 배지 ── */
+        .new-discovery-badge {
+            display: inline-flex; align-items: center;
+            font-size: 10px; font-weight: 700; padding: 2px 7px;
+            border-radius: 20px; margin-left: 6px;
+            background: rgba(180,100,255,0.13); color: #c87aff;
+            border: 1px solid rgba(180,100,255,0.3);
+            vertical-align: middle; white-space: nowrap;
+        }
+
+        /* ── AI 교차검증 배지 ── */
+        .ai-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            font-size: 10px; font-weight: 600; padding: 2px 7px;
+            border-radius: 20px; margin-left: 5px; vertical-align: middle;
+        }
+        .ai-badge.unanimous   { background: rgba(0,200,80,0.10);   color: #00b860; border: 1px solid rgba(0,200,80,0.25); }
+        .ai-badge.downgraded  { background: rgba(255,160,0,0.12);  color: #ffa000; border: 1px solid rgba(255,160,0,0.3); }
+        .ai-badge.claude-only { background: rgba(100,160,255,0.10); color: #6490ff; border: 1px solid rgba(100,160,255,0.28); }
+
+        /* ── Dual AI 인디케이터 ── */
+        .dual-ai-indicator {
+            display: flex; align-items: center; justify-content: center; gap: 5px;
+            margin-top: 10px; padding: 7px 14px;
+            background: rgba(100,100,180,0.07); border: 1px solid rgba(100,100,180,0.16);
+            border-radius: 20px; font-size: 11px; color: #55556a; font-weight: 500;
+        }
+        .dual-ai-indicator.active { color: #8888cc; border-color: rgba(130,100,255,0.28); }
+
+        .sgc-guide-box {
+            background: #13131e;
+            border: 1px solid #1e1e30;
+            border-radius: 10px;
+            padding: 11px 14px;
+        }
+        .sgc-guide-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: #3a9a6a;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 8px;
+        }
+        /* ── 듀얼 AI 시선 가이드 ── */
+        .dual-guide { display: flex; flex-direction: column; gap: 8px; }
+        .dual-guide-row {
+            display: flex; gap: 8px; align-items: flex-start;
+            padding: 7px 10px; border-radius: 8px;
+        }
+        .dual-guide-row.claude-row { background: rgba(126,184,255,0.06); border: 1px solid rgba(126,184,255,0.14); }
+        .dual-guide-row.gemini-row { background: rgba(255,170,85,0.06);  border: 1px solid rgba(255,170,85,0.14); }
+        .dual-guide-ai-label {
+            font-size: 10px; font-weight: 800; white-space: nowrap;
+            padding-top: 1px; flex-shrink: 0;
+        }
+        .claude-label { color: #7eb8ff; }
+        .gemini-label { color: #ffaa55; }
+        .sgc-guide-text {
+            font-size: 13px;
+            color: #8a8aaa;
+            line-height: 1.65;
+        }
+
+        /* ── 불일치 시 AI 분리 가이드 ── */
+        .sgc-guide-dual { display: flex; flex-direction: column; gap: 8px; }
+        .sgc-guide-view {
+            background: #0e0e18;
+            border-radius: 8px;
+            padding: 9px 12px;
+            border-left: 2px solid #2a2a42;
+        }
+        .sgc-guide-view.claude-view { border-left-color: #5566cc; }
+        .sgc-guide-view.gemini-view { border-left-color: #cc8833; }
+        .sgc-guide-view-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            display: block;
+        }
+        .claude-view .sgc-guide-view-label { color: #7788ee; }
+        .gemini-view .sgc-guide-view-label { color: #ddaa55; }
+
+        /* ── 로딩 ── */
+        .radar-emoji { font-size: 40px; animation: pulse 1.5s ease-in-out infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%       { opacity: 0.4; transform: scale(0.92); }
+        }
+        .radar-text {
+            font-size: 15px;
+            color: #3a3a52;
+            margin-top: 16px;
+            letter-spacing: 0.3px;
+        }
+        .skeleton {
+            background: linear-gradient(90deg, #18181f 25%, #22222e 50%, #18181f 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.6s infinite;
+            border-radius: 6px;
+        }
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        .sk-block { height: 14px; margin-bottom: 9px; }
+        .sk-title { height: 17px; width: 88%; margin-bottom: 13px; }
+        .sk-tag   { height: 30px; width: 88px; border-radius: 22px; display: inline-block; margin-right: 8px; }
+
+        /* ── 일정 타임라인 ── */
+        .schedule-section { margin-bottom: 28px; }
+
+        .schedule-list { display: flex; flex-direction: column; gap: 8px; }
+
+        .schedule-card {
+            background: #13131a;
+            border: 1px solid #1e1e28;
+            border-radius: 12px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+        }
+        .schedule-card.is-today {
+            border-color: #4a4af0;
+            background: #0f0f1e;
+        }
+
+        .sch-dday-col {
+            flex-shrink: 0;
+            width: 48px;
+            text-align: center;
+            padding-top: 2px;
+        }
+        .sch-dday {
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+        .dday-future  { color: #5566ff; }
+        .dday-today   { color: #00ff88; }
+        .dday-unknown { color: #55556a; font-size: 11px; }
+
+        .sch-date {
+            font-size: 10px;
+            color: #3a3a52;
+            margin-top: 2px;
+        }
+
+        .sch-divider {
+            width: 1px;
+            align-self: stretch;
+            min-height: 36px;
+            background: #22223a;
+            flex-shrink: 0;
+        }
+
+        .sch-body { flex: 1; min-width: 0; }
+
+        /* 같은 날 여러 일정 행 */
+        .sch-event-row { padding: 4px 0; }
+        .sch-event-row + .sch-event-row {
+            border-top: 1px solid #1a1a28;
+            margin-top: 6px;
+            padding-top: 8px;
+        }
+        .sch-event {
+            font-size: 13px;
+            font-weight: 600;
+            color: #d8d8e8;
+            margin-bottom: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sch-bottom { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+        .sch-status {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 6px;
+        }
+        .status-confirmed { background: rgba(0,200,80,0.12); color: #00c850; border: 1px solid rgba(0,200,80,0.25); }
+        .status-likely    { background: rgba(99,102,241,0.12); color: #8888ff; border: 1px solid rgba(99,102,241,0.25); }
+        .status-review    { background: rgba(255,200,0,0.10); color: #ffcc00; border: 1px solid rgba(255,200,0,0.25); }
+
+        .sch-stock-chip {
+            font-size: 10px;
+            color: #5a5a78;
+            background: #1a1a24;
+            border: 1px solid #2a2a38;
+            border-radius: 5px;
+            padding: 1px 6px;
+            text-decoration: none;
+        }
+        .sch-stock-chip:hover { color: #9090cc; }
+
+        .sch-source-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            color: #3a3a58;
+            background: #111118;
+            border: 1px solid #1e1e2e;
+            border-radius: 5px;
+            padding: 1px 7px;
+            text-decoration: none;
+            margin-top: 6px;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            transition: color 0.2s, border-color 0.2s;
+        }
+        .sch-source-link:hover { color: #6a6aaa; border-color: #2e2e50; }
+
+        .source-news-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 7px 10px;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #4a4a68;
+            font-size: 12px;
+            line-height: 1.5;
+            transition: background 0.15s, color 0.15s;
+        }
+        .source-news-item:hover { background: #111120; color: #7a7aaa; }
+        .source-news-num { flex-shrink: 0; font-size: 10px; color: #2a2a42; font-weight: 700; margin-top: 2px; }
+
+        .show-more-btn {
+            width: 100%;
+            margin-top: 10px;
+            padding: 10px;
+            background: #13131a;
+            border: 1px solid #1e1e28;
+            border-radius: 10px;
+            color: #44445a;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .show-more-btn:hover { background: #1a1a24; color: #7a7a9a; }
+
+        .jacket-legend {
+            font-size: 11px;
+            color: #3a3a52;
+            margin-top: 8px;
+            line-height: 1.6;
+            padding-top: 10px;
+            border-top: 1px solid #1a1a26;
+        }
+        .jacket-legend span { color: #55556a; }
+        .weather-sample-info {
+            margin-top: 8px;
+            font-size: 10px;
+            color: #2e2e48;
+            letter-spacing: 0.3px;
+        }
+        .weather-sample-info em { color: #44446a; font-style: normal; }
+
+        /* ── 면책 조항 ── */
+        .disclaimer {
+            margin-top: 40px;
+            padding: 16px 18px;
+            background: #0f0f14;
+            border: 1px solid #1a1a22;
+            border-radius: 12px;
+            font-size: 11px;
+            color: #2e2e3e;
+            line-height: 1.7;
+        }
+        .disclaimer strong { color: #38384e; }
+
+        /* ── 에러 ── */
+        .error-box {
+            background: #180e0e;
+            border: 1px solid #3a1a1a;
+            border-radius: 16px;
+            padding: 28px;
+            text-align: center;
+            color: #ff7070;
+        }
+        .error-box h3 { margin-bottom: 10px; font-size: 16px; }
+        .error-box p  { font-size: 13px; color: #7a4040; line-height: 1.6; }
+        .error-box code {
+            display: inline-block;
+            background: #200f0f;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #ff9090;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <div>
+            <h1>🧥 젠슨 트래커</h1>
+            <p class="subtitle">젠슨 황의 말 한마디, 내 계좌의 운명</p>
+        </div>
+        <button class="refresh-btn" id="refreshBtn" onclick="loadFeeds(true)">🔄 새로고침</button>
+    </header>
+
+    <div class="market-tabs">
+        <button class="market-tab active-kr" id="tabKr" onclick="switchMarket('kr')">🇰🇷 국장 레이더</button>
+        <button class="market-tab" id="tabUs" onclick="switchMarket('us')">🇺🇸 미장 레이더</button>
+    </div>
+
+    <div id="weatherWidget"></div>
+
+    <div class="section-header">
+        <span class="section-title" id="feedSectionTitle">📡 레이더망에 걸린 국장 수혜주</span>
+        <span class="last-updated" id="lastUpdated"></span>
+    </div>
+
+    <div id="feedContainer"></div>
+
+    <div class="schedule-section" style="margin-top:32px">
+        <div class="section-header" style="margin-bottom:12px">
+            <span class="section-title">📅 젠슨 황 방한 일정</span>
+            <div style="display:flex;align-items:center;gap:8px">
+                <span class="last-updated" id="scheduleUpdatedAt"></span>
+                <button class="refresh-btn" id="scheduleRefreshBtn"
+                        onclick="refreshSchedule()" style="padding:4px 10px;font-size:11px">
+                    🔄 일정 갱신
+                </button>
+            </div>
+        </div>
+        <div class="schedule-list" id="scheduleContainer">
+            <div style="color:#33333f;font-size:13px;padding:6px 0">일정 로딩 중...</div>
+        </div>
+        <button class="show-more-btn" id="scheduleMoreBtn" onclick="toggleSchedule()" style="display:none">
+            ﹀ 더보기
+        </button>
+        <div id="scheduleSourceNews" style="display:none;margin-top:14px">
+            <div style="font-size:10px;font-weight:700;color:#2e2e48;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:8px">
+                📰 AI가 참고한 원문 뉴스
+            </div>
+            <div id="scheduleSourceNewsList"></div>
+        </div>
+    </div>
+
+    <div class="disclaimer">
+        <strong>⚠️ 투자 유의사항 (Disclaimer)</strong><br>
+        본 서비스는 AI(Claude)가 뉴스·공개 데이터를 분석한 참고 정보를 제공하며, <strong>투자 권유 또는 매매 추천이 아닙니다.</strong>
+        표시된 수혜주·등락률·AI 브리핑은 정보 제공 목적이며, 실제 투자 결과와 다를 수 있습니다.
+        AI 분석 특성상 오류·환각이 포함될 수 있으므로, 최종 투자 판단은 반드시 본인의 책임하에 이루어져야 합니다.
+        본 서비스 이용으로 발생한 손실에 대해 개발자는 법적 책임을 지지 않습니다.
+    </div>
+</div>
+
+<script>
+    /* ── 설정 ── */
+    // 로컬에서 파일로 열면 localhost, 서버에서 서빙되면 자동으로 같은 origin 사용
+    const API = (location.protocol === "file:" || location.hostname === "localhost")
+        ? "http://localhost:8000"
+        : "";
+    let busy = false;
+    let currentMarket = "kr";
+    const SCHEDULE_LIMIT = 4;
+    let _allUpcoming = [];   // 더보기용 전체 일정 보관
+
+    /* ── 마켓 탭 전환 ── */
+    function switchMarket(market) {
+        if (market === currentMarket || busy) return;
+        currentMarket = market;
+
+        // 탭 활성 스타일
+        document.getElementById("tabKr").className =
+            "market-tab" + (market === "kr" ? " active-kr" : "");
+        document.getElementById("tabUs").className =
+            "market-tab" + (market === "us" ? " active-us" : "");
+
+        // 섹션 타이틀 변경
+        document.getElementById("feedSectionTitle").textContent =
+            market === "kr" ? "📡 레이더망에 걸린 국장 수혜주" : "📡 레이더망에 걸린 미장 수혜주";
+
+        // 일정 섹션 표시/숨김
+        const schedSec = document.querySelector(".schedule-section");
+        if (schedSec) schedSec.style.display = market === "kr" ? "" : "none";
+
+        // 피드 페이드 후 로드
+        const fc = document.getElementById("feedContainer");
+        fc.classList.add("fading");
+        setTimeout(() => {
+            fc.classList.remove("fading");
+            loadFeeds(true);
+        }, 200);
+    }
+
+    /* ── 일정 카드 HTML 빌더 — 같은 날짜 자동 그룹핑 ── */
+    function buildScheduleCards(items) {
+        // 날짜별 그룹핑 (순서 유지)
+        const groups = [];
+        const seen = {};
+        items.forEach(s => {
+            if (!seen[s.date]) {
+                seen[s.date] = [];
+                groups.push(seen[s.date]);
+            }
+            seen[s.date].push(s);
+        });
+
+        return groups.map(dayItems => {
+            const first   = dayItems[0];
+            const isToday   = first.dDayNum === 0;
+            const isUnknown = first.dDay === "미정";
+            const cardCls  = isToday ? "schedule-card is-today" : "schedule-card";
+            const ddayCls  = isUnknown ? "dday-unknown" : isToday ? "dday-today" : "dday-future";
+
+            const eventRows = dayItems.map(s => {
+                const statusCls = s.status === "확정" ? "status-confirmed"
+                                : s.status === "유력" ? "status-likely"
+                                : "status-review";
+                const chips = (s.relatedCodes || []).map((code, i) =>
+                    `<a class="sch-stock-chip"
+                       href="https://m.stock.naver.com/domestic/stock/${code}/total"
+                       target="_blank" rel="noopener">${s.relatedNames?.[i] || code}</a>`
+                ).join("");
+                const sourceLink = s.sourceLink
+                    ? `<a class="sch-source-link" href="${s.sourceLink}" target="_blank" rel="noopener">
+                           📰 ${s.sourceTitle || "원문 보기"}
+                       </a>`
+                    : "";
+                return `
+                <div class="sch-event-row">
+                    <div class="sch-event">${s.event}</div>
+                    <div class="sch-bottom">
+                        <span class="sch-status ${statusCls}">${s.status}</span>
+                        ${chips}
+                    </div>
+                    ${sourceLink}
+                </div>`;
+            }).join("");
+
+            return `
+            <div class="${cardCls}">
+                <div class="sch-dday-col">
+                    <div class="sch-dday ${ddayCls}">${first.dDay}</div>
+                    <div class="sch-date">${first.date.slice(5)}(${first.dayLabel})</div>
+                </div>
+                <div class="sch-divider"></div>
+                <div class="sch-body">${eventRows}</div>
+            </div>`;
+        }).join("");
+    }
+
+    /* ── 유틸 ── */
+    function jacketBar(n) {
+        const score = Math.min(5, Math.max(1, n));
+        return "🧥".repeat(score) + "🪣".repeat(5 - score);
+    }
+
+    function timeAgo(s) {
+        if (!s) return "";
+        try {
+            const diff = (Date.now() - new Date(s)) / 1000;
+            if (diff < 60)    return "방금 전";
+            if (diff < 3600)  return `${Math.floor(diff / 60)}분 전`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+            return `${Math.floor(diff / 86400)}일 전`;
+        } catch { return s; }
+    }
+
+    function changeClass(c) {
+        if (!c || c === "N/A") return "change-flat";
+        return c.startsWith("+") ? "change-up" : c.startsWith("-") ? "change-down" : "change-flat";
+    }
+
+    function stockUrl(s) {
+        if (s.market === "us") {
+            if (s.code && s.code !== "search")
+                return `https://finance.yahoo.com/quote/${s.code}`;
+            return `https://finance.yahoo.com/search?p=${encodeURIComponent(s.name)}`;
+        }
+        if (s.code && s.code !== "search")
+            return `https://m.stock.naver.com/domestic/stock/${s.code}/total`;
+        return `https://m.stock.naver.com/search/domestic?keyword=${encodeURIComponent(s.name)}`;
+    }
+
+    function newDiscoveryBadge(s) {
+        if (!s.is_new_discovery) return "";
+        return `<span class="new-discovery-badge">🌟 신규포착</span>`;
+    }
+
+    function statusBadge(status) {
+        if (!status) return `<span class="badge badge-watch">추세관망</span>`;
+        if (status.startsWith("호재강함"))  return `<span class="badge badge-strong">호재강함</span>`;
+        if (status.startsWith("과열주의"))  return `<span class="badge badge-hot">과열주의</span>`;
+        if (status.startsWith("추세관망"))  return `<span class="badge badge-watch">추세관망</span>`;
+        return `<span class="badge badge-watch">${status}</span>`;
+    }
+
+    function consensusBadge(consensus) {
+        if (!consensus || !consensus.method) return "";
+        if (consensus.method === "unanimous")
+            return `<span class="ai-badge unanimous" title="Claude: ${consensus.claude} / Groq: ${consensus.gemini}">🤝 만장일치</span>`;
+        if (consensus.method === "downgraded")
+            return `<span class="ai-badge downgraded" title="Claude: ${consensus.claude} → Groq: ${consensus.gemini} → 보수적 하향">⚠️ 의견불일치</span>`;
+        return `<span class="ai-badge claude-only" title="Groq 분석 없음">🤖 Claude</span>`;
+    }
+
+    function dualAiIndicator(aiMethod) {
+        if (aiMethod === "dual")
+            return `<div class="dual-ai-indicator active">🤖 Claude × ⚡ Groq 교차검증 완료</div>`;
+        if (aiMethod === "groq_only")
+            return `<div class="dual-ai-indicator" style="opacity:.8">⚡ Groq 단독 분석 (Claude 한도 초과)</div>`;
+        if (aiMethod === "claude_only")
+            return `<div class="dual-ai-indicator" style="opacity:.55">🤖 Claude 단독 분석</div>`;
+        return "";
+    }
+
+    function guideBox(s) {
+        const consensus = s.ai_consensus || {};
+        // 의견 불일치: Claude·Gemini 각각 표시
+        if (consensus.method === "downgraded" && consensus.claude_guide && consensus.gemini_guide) {
+            return `
+            <div class="sgc-guide-box">
+                <span class="sgc-guide-label">💡 AI 교차 분석 · 의견 불일치</span>
+                <div class="sgc-guide-dual">
+                    <div class="sgc-guide-view claude-view">
+                        <span class="sgc-guide-view-label">🤖 Claude 시선</span>
+                        <span class="sgc-guide-text">${consensus.claude_guide}</span>
+                    </div>
+                    <div class="sgc-guide-view gemini-view">
+                        <span class="sgc-guide-view-label">✨ Groq 시선</span>
+                        <span class="sgc-guide-text">${consensus.gemini_guide}</span>
+                    </div>
+                </div>
+            </div>`;
+        }
+        // 만장일치: 가이드 아래에 Groq 동의 한 줄 표시
+        if (consensus.method === "unanimous" && consensus.gemini) {
+            return `
+            <div class="sgc-guide-box">
+                <span class="sgc-guide-label">💡 AI 투자 전망 가이드</span>
+                <span class="sgc-guide-text">${s.investment_guide || "분석 데이터 없음"}</span>
+                <div style="margin-top:6px;font-size:11px;color:#00b860;opacity:.85">✨ Groq 동의: ${consensus.gemini}</div>
+            </div>`;
+        }
+        return `
+        <div class="sgc-guide-box">
+            <span class="sgc-guide-label">💡 AI 투자 전망 가이드</span>
+            <span class="sgc-guide-text">${s.investment_guide || "분석 데이터 없음"}</span>
+        </div>`;
+    }
+
+    /* ── 로딩 스켈레톤 ── */
+    function renderLoading() {
+        document.getElementById("weatherWidget").innerHTML = `
+            <div class="weather-widget" style="text-align:center;padding:40px 24px">
+                <div class="radar-emoji">📡</div>
+                <div class="radar-text">기상 레이더 가동 중...<br>Claude가 젠슨 황의 동향을 분석하고 있어요<br><span style="font-size:12px;opacity:0.6;margin-top:8px;display:block">AI 분석에 최대 30초 정도 소요될 수 있어요 ☕</span></div>
+            </div>`;
+        document.getElementById("feedContainer").innerHTML = [1, 2, 3].map(() => `
+            <div class="card">
+                <div class="skeleton sk-block" style="width:70px;margin-bottom:10px"></div>
+                <div class="skeleton sk-title"></div>
+                <div style="background:#0f0f16;border-radius:10px;padding:13px;margin-bottom:14px">
+                    <div class="skeleton sk-block" style="width:50px;margin-bottom:8px"></div>
+                    <div class="skeleton sk-block"></div>
+                    <div class="skeleton sk-block" style="width:65%"></div>
+                </div>
+                <div class="skeleton sk-tag"></div>
+                <div class="skeleton sk-tag"></div>
+            </div>`).join("");
+    }
+
+    /* ── 일정 타임라인 렌더링 ──
+       schedule[] 필드: date, dayLabel, event, status, dDay, dDayNum, relatedCodes, relatedNames
+       scheduleSource: "claude" | "fallback"
+       scheduleUpdatedAt: unix timestamp
+    ── */
+    function renderSchedule(data) {
+        const schedule = data.schedule || [];
+        const source   = data.scheduleSource || "fallback";
+        const updatedAt = data.scheduleUpdatedAt
+            ? new Date(data.scheduleUpdatedAt * 1000).toLocaleTimeString("ko-KR")
+            : null;
+
+        const sourceLabel = source === "claude" ? "🤖 Claude 실시간" : "📋 기본 일정";
+        document.getElementById("scheduleUpdatedAt").textContent =
+            updatedAt ? `${sourceLabel} · ${updatedAt}` : sourceLabel;
+
+        // 오늘 이후 일정만 표시
+        const upcoming = schedule.filter(s => s.dDayNum >= 0);
+
+        if (!upcoming.length) {
+            document.getElementById("scheduleContainer").innerHTML =
+                `<div style="color:#33333f;font-size:13px">예정된 일정이 없습니다</div>`;
+            return;
+        }
+
+        _allUpcoming = upcoming;
+        const moreBtn = document.getElementById("scheduleMoreBtn");
+        moreBtn.style.display = upcoming.length > SCHEDULE_LIMIT ? "block" : "none";
+        moreBtn.textContent = "﹀ 더보기";
+        moreBtn.dataset.expanded = "false";
+
+        document.getElementById("scheduleContainer").innerHTML =
+            buildScheduleCards(_allUpcoming.slice(0, SCHEDULE_LIMIT));
+
+        // 원문 뉴스 렌더링
+        const sourceNews = data.scheduleSourceNews || [];
+        const srcWrap = document.getElementById("scheduleSourceNews");
+        const srcList = document.getElementById("scheduleSourceNewsList");
+        if (sourceNews.length) {
+            srcList.innerHTML = sourceNews.map((n, i) => `
+                <a class="source-news-item" href="${n.link}" target="_blank" rel="noopener">
+                    <span class="source-news-num">${i + 1}</span>
+                    <span>${n.title}</span>
+                </a>`).join("");
+            srcWrap.style.display = "block";
+        } else {
+            srcWrap.style.display = "none";
+        }
+    }
+
+    function toggleSchedule() {
+        const btn = document.getElementById("scheduleMoreBtn");
+        const next = btn.dataset.expanded !== "true";
+        btn.dataset.expanded = String(next);
+
+        document.getElementById("scheduleContainer").innerHTML =
+            buildScheduleCards(next ? _allUpcoming : _allUpcoming.slice(0, SCHEDULE_LIMIT));
+        btn.textContent = next ? "︿ 접기" : "﹀ 더보기";
+    }
+
+    /* ── 일정 수동 갱신 ── */
+    async function refreshSchedule() {
+        const btn = document.getElementById("scheduleRefreshBtn");
+        btn.textContent = "⏳ 갱신 중...";
+        btn.classList.add("loading");
+        try {
+            const res = await fetch(`${API}/api/schedule/refresh`, { method: "POST" });
+            const result = await res.json();
+            if (result.status === "ok") {
+                // 피드 전체 재로드해서 새 일정 반영
+                _feedsLoaded = false;
+                await loadFeeds(true);
+            } else {
+                document.getElementById("scheduleUpdatedAt").textContent =
+                    `갱신 결과: ${result.status}`;
+            }
+        } catch (e) {
+            document.getElementById("scheduleUpdatedAt").textContent = "갱신 실패";
+        } finally {
+            btn.textContent = "🔄 일정 갱신";
+            btn.classList.remove("loading");
+        }
+    }
+
+    /* ── 날씨 위젯 렌더링 ──
+       data 필드: marketWeather, weatherReason, dailyStrategy, jacketIndex
+    ── */
+    function renderWeather(data) {
+        const weatherStr = data.marketWeather || "🌥️ 흐림";
+        const emoji = weatherStr.match(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{27BF}]/u)?.[0] || "🌥️";
+        const label = weatherStr.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{27BF}]/gu, "").trim() || weatherStr;
+
+        document.getElementById("weatherWidget").innerHTML = `
+            <div class="weather-widget">
+                <div class="widget-label">
+                    <span>🛰️ 오늘의 젠슨 기상청 · AI 분석</span>
+                    <span class="radar-clock"><span class="radar-clock-dot"></span><span id="radarClock"></span></span>
+                </div>
+                <div class="weather-main">
+                    <div class="weather-emoji-big">${emoji}</div>
+                    <div class="weather-right">
+                        <div class="weather-status">${label}</div>
+                        <div class="weather-reason">${data.weatherReason || ""}</div>
+                    </div>
+                </div>
+                <div class="strategy-box">
+                    <div class="strategy-label">📌 오늘의 장중 대응 전략</div>
+                    <div class="strategy-text">${data.dailyStrategy || "분석 중..."}</div>
+                </div>
+                <div class="jacket-row">
+                    <span class="jacket-label">가죽자켓 지수</span>
+                    <span class="jacket-icons">${jacketBar(data.jacketIndex || 3)}</span>
+                    <span class="jacket-score-text">${data.jacketIndex || 3} / 5</span>
+                </div>
+                <div class="jacket-legend">
+                    🧥 젠슨 황·엔비디아 관련 재료가 시장에 미치는 <span>호재 강도</span>를 1~5로 측정해요.<br>
+                    강도가 높을수록 시장 날씨가 <span>☀️맑음</span>에 가까워지고, 낮을수록 <span>🌧️비</span>로 흐려져요.
+                </div>
+                ${(()=>{
+                    const upd = data.weatherUpdatedAt
+                        ? new Date(data.weatherUpdatedAt*1000).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})
+                        : null;
+                    return upd ? `<div class="weather-sample-info">📊 <em>${upd}</em> 기준 분석</div>` : '';
+                })()}
+                ${dualAiIndicator(data.aiMethod)}
+            </div>`;
+    }
+
+    /* ── 뉴스 피드 렌더링 ── */
+    function buildCard(item, isFallback = false) {
+        const stockCards = (item.stocks || []).map(s => {
+            const url = stockUrl(s);
+            return `
+            <div class="stock-guide-card">
+                <div class="sgc-header">
+                    <a class="sgc-name-link" href="${url}" target="_blank" rel="noopener">
+                        <span class="stock-name">${s.name}${newDiscoveryBadge(s)}</span>
+                        <span class="${changeClass(s.change)}">${s.change || "N/A"}</span>
+                    </a>
+                    ${statusBadge(s.investment_status)}${consensusBadge(s.ai_consensus)}
+                </div>
+                ${guideBox(s)}
+            </div>`;
+        }).join("");
+
+        const stockSection = item.stocks?.length
+            ? `<div class="stock-section-title">레이더 포착 수혜주</div>${stockCards}` : "";
+
+        const pinnedBadge = item.isPinned
+            ? `<span class="pinned-badge">🔥 파급력 ${item.impactScore}점 · 주목</span>`
+            : (item.impactScore >= 3 ? `<span class="impact-score">파급력 ${item.impactScore}점</span>` : "");
+
+        const fallbackBadge = isFallback
+            ? `<span class="fallback-badge">⏳ 전일 기사</span>` : "";
+
+        const articleLink = item.link
+            ? `<a class="article-link" href="${item.link}" target="_blank" rel="noopener">기사 원문 보기 →</a>` : "";
+
+        return `
+        <div class="card${item.isPinned ? " card-pinned" : ""}${isFallback ? " card-fallback" : ""}">
+            <div class="time-text">${timeAgo(item.time)}${pinnedBadge}${fallbackBadge}</div>
+            <div class="card-title">${item.title}</div>
+            <div class="ai-brief-box">
+                <div class="ai-brief-title">🤖 AI 브리핑</div>
+                <div class="ai-brief-text">${item.aiSummary || "분석 데이터 없음"}</div>
+            </div>
+            ${stockSection}
+            ${articleLink}
+        </div>`;
+    }
+
+    function renderFeeds(data) {
+        const todayItems    = data.today_feeds    || data.items || [];
+        const fallbackItems = data.fallback_feeds || [];
+
+        if (!todayItems.length && !fallbackItems.length) {
+            document.getElementById("feedContainer").innerHTML =
+                `<div class="error-box"><h3>📭 뉴스 없음</h3><p>지금은 레이더에 잡힌 뉴스가 없습니다.</p></div>`;
+            return;
+        }
+
+        let html = "";
+
+        // 오늘 뉴스 섹션
+        if (todayItems.length) {
+            html += `<div class="feed-subsection-header">
+                <span>💡 실시간 오늘 레이더</span>
+            </div>`;
+            html += todayItems.map(item => buildCard(item, false)).join("");
+        }
+
+        // 전일 보충 섹션
+        if (fallbackItems.length) {
+            html += `<div class="feed-subsection-header fallback-header" style="margin-top:${todayItems.length ? 28 : 0}px">
+                <span>⏳ 참고용 전일 리포트</span>
+            </div>`;
+            html += fallbackItems.map(item => buildCard(item, true)).join("");
+        }
+
+        document.getElementById("feedContainer").innerHTML = html;
+
+        const _now = new Date();
+        const _kstDay = new Date(_now.getTime() + 9 * 3600 * 1000).getUTCDay();
+        const _isWeekend = _kstDay === 0 || _kstDay === 6;
+        const _weekendBadge = _isWeekend
+            ? ' <span style="background:#fff3e0;color:#e65100;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;">주말 휴장기 레이더 가동 중 ⏳</span>' : '';
+        document.getElementById("lastUpdated").innerHTML =
+            `업데이트: ${_now.toLocaleTimeString("ko-KR")}${_weekendBadge}`;
+    }
+
+    /* ── 에러 렌더링 ── */
+    function renderError(msg) {
+        document.getElementById("weatherWidget").innerHTML = "";
+        document.getElementById("feedContainer").innerHTML = `
+            <div class="error-box">
+                <h3>⚠️ 레이더 연결 실패</h3>
+                <p>${msg}<br><br>백엔드 서버를 먼저 켜주세요:</p>
+                <code>cd C:\\dev\\claude\\backend &amp;&amp; python main.py</code>
+            </div>`;
+    }
+
+    /* ── 메인 로드 ── */
+    async function loadFeeds(force = false) {
+        if (busy) return;
+        busy = true;
+        const btn = document.getElementById("refreshBtn");
+        btn.classList.add("loading");
+        btn.textContent = "⏳ 분석 중...";
+        renderLoading();
+
+        try {
+            const ts  = force ? `t=${Date.now()}&` : "";
+            const url = `${API}/api/feeds?${ts}market=${currentMarket}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`서버 오류 ${res.status}`);
+            const data = await res.json();
+            if (currentMarket === "kr") renderSchedule(data);
+            renderWeather(data);   // data.marketWeather / weatherReason / dailyStrategy / jacketIndex
+            renderFeeds(data);     // data.items[].aiSummary / stocks[].name,code,appeal,change
+        } catch (e) {
+            renderError(e.message);
+        } finally {
+            busy = false;
+            btn.classList.remove("loading");
+            btn.textContent = "🔄 새로고침";
+        }
+    }
+
+    loadFeeds();
+    setInterval(() => loadFeeds(false), 600_000);
+
+    // 실시간 레이더 가동 시간 시계
+    function updateRadarClock() {
+        const el = document.getElementById("radarClock");
+        if (!el) return;
+        const now = new Date();
+        const h = String(now.getHours()).padStart(2, "0");
+        const m = String(now.getMinutes()).padStart(2, "0");
+        const s = String(now.getSeconds()).padStart(2, "0");
+        el.textContent = `레이더 가동 ${h}:${m}:${s}`;
+    }
+    updateRadarClock();
+    setInterval(updateRadarClock, 1000);
+</script>
+</body>
+</html>

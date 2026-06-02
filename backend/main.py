@@ -1506,7 +1506,7 @@ def health():
 
 
 # ── 프론트엔드 서빙 ─────────────────────────────────────────────────────
-_HTML_PATH = pathlib.Path(__file__).parent.parent / "jensen-tracker.html"
+_HTML_PATH = pathlib.Path(__file__).parent / "jensen-tracker.html"
 
 @app.get("/")
 def serve_frontend():

@@ -724,12 +724,14 @@ def _warmup_feeds():
         except Exception as e:
             print(f"[워밍업 에러] {market}: {e}")
 
+WARMUP_INTERVAL = 1800  # 30분
+
 def _background_schedule_loop():
     time.sleep(2)
     tick = 0
     while True:
         try:
-            if tick % 6 == 0:  # 1시간(10분*6)마다 일정/주가 갱신
+            if tick % 2 == 0:  # 1시간(30분*2)마다 일정/주가 갱신
                 refresh_schedule()
                 schedule_codes = [
                     code
@@ -742,7 +744,7 @@ def _background_schedule_loop():
         except Exception as e:
             print(f"[일정 루프 에러] {e}")
         tick += 1
-        time.sleep(FEEDS_TTL)  # 10분마다 실행
+        time.sleep(WARMUP_INTERVAL)  # 30분마다 실행
 
 
 # ── 뉴스 수집 & 분석 ────────────────────────────────────────────────────
@@ -1020,6 +1022,57 @@ def _analyze_with_gemini(titles_text: str, schedule_text: str, market: str = "kr
     return None
 
 
+import requests as _requests
+
+_OPENROUTER_MODEL_CHAIN = [
+    "qwen/qwen-2.5-72b-instruct:free",   # 한국어 강함
+    "meta-llama/llama-3.3-70b-instruct:free",
+]
+
+def _analyze_with_openrouter(titles_text: str, schedule_text: str, market: str = "kr") -> dict | None:
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return None
+    prompt = _get_system_prompt(market)
+    user_content = (
+        f"[Today's US News]\n{titles_text}" if market == "us"
+        else f"{schedule_text}\n\n[오늘의 뉴스 목록]\n{titles_text}"
+    )
+    for model in _OPENROUTER_MODEL_CHAIN:
+        try:
+            resp = _requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 4096,
+                },
+                timeout=30,
+            )
+            if resp.status_code == 429:
+                print(f"[OpenRouter:{model.split('/')[1][:20]}] 속도 제한 → 다음 모델 시도")
+                continue
+            resp.raise_for_status()
+            text = resp.json()["choices"][0]["message"]["content"].strip()
+            result = _parse_and_filter_analysis(text, [], market)
+            if result:
+                print(f"[OpenRouter:{model.split('/')[1][:20]}] {market.upper()} 분석 완료")
+            return result
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str:
+                print(f"[OpenRouter:{model}] 속도 제한 → 다음 모델 시도")
+                continue
+            print(f"[OpenRouter 분석 에러] {e}")
+            return None
+    return None
+
+
 _STATUS_SAFETY: dict[str, int] = {
     "호재강함": 1,
     "추세관망(호재보통)": 2,
@@ -1200,14 +1253,20 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr", warmup: bool =
         except Exception:
             groq_result = None
 
-        # Gemini는 실사용 요청에서 Groq 실패 시에만 호출 (워밍업에서는 호출 안 함)
+        # OpenRouter·Gemini는 실사용 요청에서 Groq 실패 시에만 호출 (워밍업 제외)
+        openrouter_result = None
+        gemini_result = None
         if not warmup and not groq_result:
-            gemini_result = _analyze_with_gemini(titles_text, schedule_text, market)
-        else:
-            gemini_result = None
+            openrouter_result = _analyze_with_openrouter(titles_text, schedule_text, market)
+            if not openrouter_result:
+                gemini_result = _analyze_with_gemini(titles_text, schedule_text, market)
 
-        secondary = groq_result or gemini_result
-        secondary_name = "Groq" if groq_result else ("Gemini" if gemini_result else None)
+        secondary = groq_result or openrouter_result or gemini_result
+        secondary_name = (
+            "Groq" if groq_result else
+            "OpenRouter" if openrouter_result else
+            ("Gemini" if gemini_result else None)
+        )
 
         if claude_result and secondary:
             result = _cross_validate(claude_result, secondary)

@@ -709,22 +709,21 @@ def refresh_schedule() -> dict:
     return {"status": "ok", "count": len(final), "source": "claude"}
 
 
+def _warmup_market(market: str):
+    try:
+        _cutoff, _, _ = _get_news_cutoff(market)
+        _72h = time.time() - 259200
+        news = get_jensen_news(cutoff=_72h) if market == "kr" else get_us_news(cutoff=_72h)
+        if news:
+            analyze_news_batch(news[:8], market=market, warmup=True)
+            print(f"[워밍업] {market.upper()} 캐시 갱신 완료")
+    except Exception as e:
+        print(f"[워밍업 에러] {market}: {e}")
+
 def _warmup_feeds():
-    for i, market in enumerate(("kr", "us")):
-        if i > 0:
-            time.sleep(30)  # KR→US 연속 호출로 Claude 속도 제한 방지
-        try:
-            _cutoff, _, _ = _get_news_cutoff(market)
-            _72h = time.time() - 259200
-            if market == "kr":
-                news = get_jensen_news(cutoff=_72h)
-            else:
-                news = get_us_news(cutoff=_72h)
-            if news:
-                analyze_news_batch(news[:8], market=market, warmup=True)
-                print(f"[워밍업] {market.upper()} 캐시 갱신 완료")
-        except Exception as e:
-            print(f"[워밍업 에러] {market}: {e}")
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        ex.submit(_warmup_market, "kr")
+        ex.submit(_warmup_market, "us")
 
 WARMUP_INTERVAL = 1800  # 30분
 

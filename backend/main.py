@@ -1189,9 +1189,16 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
             claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
             groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
             gemini_fut = ex.submit(_analyze_with_gemini, titles_text, schedule_text, market)
-        claude_result = claude_fut.result()
-        groq_result = groq_fut.result()
-        gemini_result = gemini_fut.result()
+
+        def _safe_result(fut, timeout=15):
+            try:
+                return fut.result(timeout=timeout)
+            except Exception:
+                return None
+
+        claude_result = _safe_result(claude_fut, timeout=20)
+        groq_result = _safe_result(groq_fut, timeout=10)
+        gemini_result = _safe_result(gemini_fut, timeout=10)
 
         available = [r for r in [claude_result, groq_result, gemini_result] if r]
         names = [n for n, r in [("Claude", claude_result), ("Groq", groq_result), ("Gemini", gemini_result)] if r]

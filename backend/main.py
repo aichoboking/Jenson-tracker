@@ -1186,34 +1186,21 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
 
     result = fallback
     try:
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
-            groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
-        claude_result = claude_fut.result()
-        groq_result = groq_fut.result()
-
-        if claude_result and groq_result:
-            result = _cross_validate(claude_result, groq_result)
-            result["aiMethod"] = "dual"
-            print("[분석] Claude × Groq 교차검증 완료")
-        elif claude_result:
-            result = claude_result
-            for item in result.get("items", []):
-                for s in item.get("stocks", []):
-                    s.setdefault("ai_consensus", {
-                        "claude": s.get("investment_status", ""),
-                        "gemini": "분석없음",
-                        "method": "claude_only",
-                    })
-            result["aiMethod"] = "claude_only"
-            print("[분석] Claude 단독 분석 완료")
-        elif groq_result:
+        groq_result = _analyze_with_groq(titles_text, schedule_text, market)
+        if groq_result:
             result = groq_result
             result["aiMethod"] = "groq_only"
-            print("[분석] Groq 단독 분석 완료 (Claude 한도 초과)")
+            print(f"[분석] Groq 단독 분석 완료 ({market.upper()})")
         else:
-            result = fallback
-            print("[분석] 모든 AI 분석 실패 - 폴백 사용")
+            print(f"[분석] Groq 실패 → Claude 백업 시도 ({market.upper()})")
+            claude_result = _analyze_with_claude(titles_text, schedule_text, market)
+            if claude_result:
+                result = claude_result
+                result["aiMethod"] = "claude_only"
+                print(f"[분석] Claude 백업 분석 완료 ({market.upper()})")
+            else:
+                result = fallback
+                print("[분석] 모든 AI 분석 실패 - 폴백 사용")
     except Exception as e:
         print(f"[분석 에러] {e}")
         result = fallback

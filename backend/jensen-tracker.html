@@ -819,8 +819,17 @@
     }
 
     function changeClass(c) {
-        if (!c || c === "N/A") return "change-flat";
+        if (!c || c === "N/A" || c.includes("nan")) return "change-flat";
         return c.startsWith("+") ? "change-up" : c.startsWith("-") ? "change-down" : "change-flat";
+    }
+
+    function formatChange(c) {
+        if (!c || c === "N/A" || c.includes("nan")) return "N/A";
+        const m = c.match(/^([+-]?\d+\.\d+%)\s*(\(.+\))?$/);
+        if (!m) return c;
+        const pct = m[1];
+        const label = m[2] ? `<span style="font-size:10px;font-weight:400;opacity:0.7;margin-left:2px;">${m[2]}</span>` : "";
+        return pct + label;
     }
 
     function stockUrl(s) {
@@ -1064,7 +1073,7 @@
                 <div class="sgc-header">
                     <a class="sgc-name-link" href="${url}" target="_blank" rel="noopener">
                         <span class="stock-name">${s.name}${newDiscoveryBadge(s)}</span>
-                        <span class="${changeClass(s.change)}">${s.change || "N/A"}</span>
+                        <span class="${changeClass(s.change)}">${formatChange(s.change)}</span>
                     </a>
                     ${statusBadge(s.investment_status)}${consensusBadge(s.ai_consensus)}
                 </div>
@@ -1143,8 +1152,7 @@
         document.getElementById("feedContainer").innerHTML = `
             <div class="error-box">
                 <h3>⚠️ 레이더 연결 실패</h3>
-                <p>${msg}<br><br>백엔드 서버를 먼저 켜주세요:</p>
-                <code>cd C:\\dev\\claude\\backend &amp;&amp; python main.py</code>
+                <p>${msg}<br><br>잠시 후 새로고침을 눌러주세요. 문제가 지속되면 서버 점검 중입니다.</p>
             </div>`;
     }
 

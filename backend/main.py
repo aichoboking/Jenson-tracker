@@ -727,7 +727,9 @@ def refresh_schedule() -> dict:
 
 
 def _warmup_feeds():
-    for market in ("kr", "us"):
+    for i, market in enumerate(("kr", "us")):
+        if i > 0:
+            time.sleep(10)  # KR→US 연속 호출로 Claude 속도 제한 방지
         try:
             _cutoff, _, _ = _get_news_cutoff(market)
             _72h = time.time() - 259200
@@ -920,11 +922,11 @@ def _get_approved_whitelist(market: str) -> dict:
     return APPROVED_STOCKS_US if market == "us" else APPROVED_STOCKS
 
 
-_claude_quota_exceeded = False  # Claude 한도 초과 플래그
+_claude_cooldown_until: float = 0.0  # 이 시각 이후에 Claude 재시도 가능
 
 def _analyze_with_claude(titles_text: str, schedule_text: str, market: str = "kr") -> dict | None:
-    global _claude_quota_exceeded
-    if _claude_quota_exceeded:
+    global _claude_cooldown_until
+    if time.time() < _claude_cooldown_until:
         return None
     try:
         prompt = _get_system_prompt(market)
@@ -946,8 +948,8 @@ def _analyze_with_claude(titles_text: str, schedule_text: str, market: str = "kr
     except Exception as e:
         err_str = str(e)
         if "429" in err_str or "quota" in err_str.lower() or "billing" in err_str.lower():
-            _claude_quota_exceeded = True
-            print(f"[Claude] 한도 초과 → Groq로 전환")
+            _claude_cooldown_until = time.time() + 300  # 5분 쿨다운 후 재시도
+            print(f"[Claude] 속도 제한 → 5분 후 재시도")
         else:
             print(f"[Claude 분석 에러] {e}")
         return None

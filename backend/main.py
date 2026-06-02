@@ -1186,21 +1186,27 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
 
     result = fallback
     try:
-        claude_result = _analyze_with_claude(titles_text, schedule_text, market)
-        if claude_result:
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
+            groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
+        claude_result = claude_fut.result()
+        groq_result = groq_fut.result()
+
+        if claude_result and groq_result:
+            result = _cross_validate(claude_result, groq_result)
+            result["aiMethod"] = "dual"
+            print(f"[분석] Claude × Groq 교차검증 완료 ({market.upper()})")
+        elif claude_result:
             result = claude_result
             result["aiMethod"] = "claude_only"
-            print(f"[분석] Claude 분석 완료 ({market.upper()})")
+            print(f"[분석] Claude 단독 분석 완료 ({market.upper()})")
+        elif groq_result:
+            result = groq_result
+            result["aiMethod"] = "groq_only"
+            print(f"[분석] Groq 단독 분석 완료 ({market.upper()})")
         else:
-            print(f"[분석] Claude 실패 → Groq 백업 시도 ({market.upper()})")
-            groq_result = _analyze_with_groq(titles_text, schedule_text, market)
-            if groq_result:
-                result = groq_result
-                result["aiMethod"] = "groq_only"
-                print(f"[분석] Groq 백업 분석 완료 ({market.upper()})")
-            else:
-                result = fallback
-                print("[분석] 모든 AI 분석 실패 - 폴백 사용")
+            result = fallback
+            print("[분석] 모든 AI 분석 실패 - 폴백 사용")
     except Exception as e:
         print(f"[분석 에러] {e}")
         result = fallback

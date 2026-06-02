@@ -956,6 +956,8 @@ def _analyze_with_groq(titles_text: str, schedule_text: str, market: str = "kr")
             result = _parse_and_filter_analysis(text, [], market)
             if result:
                 print(f"[Groq:{model.split('-')[0]}] {market.upper()} 분석 완료")
+            else:
+                print(f"[Groq:{model.split('-')[0]}] {market.upper()} 파싱 실패 | 응답 앞부분: {text[:200]}")
             return result
         except Exception as e:
             err_str = str(e)

@@ -1186,18 +1186,18 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
 
     result = fallback
     try:
-        groq_result = _analyze_with_groq(titles_text, schedule_text, market)
-        if groq_result:
-            result = groq_result
-            result["aiMethod"] = "groq_only"
-            print(f"[분석] Groq 단독 분석 완료 ({market.upper()})")
+        claude_result = _analyze_with_claude(titles_text, schedule_text, market)
+        if claude_result:
+            result = claude_result
+            result["aiMethod"] = "claude_only"
+            print(f"[분석] Claude 분석 완료 ({market.upper()})")
         else:
-            print(f"[분석] Groq 실패 → Claude 백업 시도 ({market.upper()})")
-            claude_result = _analyze_with_claude(titles_text, schedule_text, market)
-            if claude_result:
-                result = claude_result
-                result["aiMethod"] = "claude_only"
-                print(f"[분석] Claude 백업 분석 완료 ({market.upper()})")
+            print(f"[분석] Claude 실패 → Groq 백업 시도 ({market.upper()})")
+            groq_result = _analyze_with_groq(titles_text, schedule_text, market)
+            if groq_result:
+                result = groq_result
+                result["aiMethod"] = "groq_only"
+                print(f"[분석] Groq 백업 분석 완료 ({market.upper()})")
             else:
                 result = fallback
                 print("[분석] 모든 AI 분석 실패 - 폴백 사용")

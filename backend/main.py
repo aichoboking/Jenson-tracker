@@ -26,6 +26,12 @@ try:
 except ImportError:
     _GEMINI_LIB_OK = False
 
+try:
+    from groq import Groq as GroqClient
+    _GROQ_LIB_OK = True
+except ImportError:
+    _GROQ_LIB_OK = False
+
 def _keep_alive_loop():
     import urllib.request
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "")
@@ -69,6 +75,15 @@ if _GEMINI_LIB_OK:
         print("[서버] GEMINI_API_KEY 없음 - Claude 단독 모드")
 else:
     print("[서버] google-genai 라이브러리 없음 - Claude 단독 모드")
+
+_groq_client = None
+if _GROQ_LIB_OK:
+    _groq_key = os.environ.get("GROQ_API_KEY", "")
+    if _groq_key:
+        _groq_client = GroqClient(api_key=_groq_key)
+        print("[서버] Groq 클라이언트 초기화 완료")
+    else:
+        print("[서버] GROQ_API_KEY 없음")
 
 # ── 하드코딩 폴백 일정 (뉴스 추출 실패 시 사용) ────────────────────────
 SCHEDULE_FALLBACK = [
@@ -883,7 +898,12 @@ def _get_approved_whitelist(market: str) -> dict:
     return APPROVED_STOCKS_US if market == "us" else APPROVED_STOCKS
 
 
+_claude_quota_exceeded = False  # Claude 한도 초과 플래그
+
 def _analyze_with_claude(titles_text: str, schedule_text: str, market: str = "kr") -> dict | None:
+    global _claude_quota_exceeded
+    if _claude_quota_exceeded:
+        return None
     try:
         prompt = _get_system_prompt(market)
         if market == "us":
@@ -902,8 +922,49 @@ def _analyze_with_claude(titles_text: str, schedule_text: str, market: str = "kr
             print(f"[Claude] {market.upper()} 분석 완료")
         return result
     except Exception as e:
-        print(f"[Claude 분석 에러] {e}")
+        err_str = str(e)
+        if "429" in err_str or "quota" in err_str.lower() or "billing" in err_str.lower():
+            _claude_quota_exceeded = True
+            print(f"[Claude] 한도 초과 → Groq로 전환")
+        else:
+            print(f"[Claude 분석 에러] {e}")
         return None
+
+
+_GROQ_MODEL_CHAIN = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+
+def _analyze_with_groq(titles_text: str, schedule_text: str, market: str = "kr") -> dict | None:
+    if not _groq_client:
+        return None
+    prompt = _get_system_prompt(market)
+    user_content = (
+        f"[Today's US News]\n{titles_text}" if market == "us"
+        else f"{schedule_text}\n\n[오늘의 뉴스 목록]\n{titles_text}"
+    )
+    for model in _GROQ_MODEL_CHAIN:
+        try:
+            response = _groq_client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=0.3,
+                max_tokens=4096,
+            )
+            text = response.choices[0].message.content.strip()
+            result = _parse_and_filter_analysis(text, [], market)
+            if result:
+                print(f"[Groq:{model.split('-')[0]}] {market.upper()} 분석 완료")
+            return result
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "rate" in err_str.lower():
+                print(f"[Groq:{model}] 속도 제한 → 다음 모델 시도")
+                continue
+            print(f"[Groq 분석 에러] {e}")
+            return None
+    return None
 
 
 _GEMINI_MODEL_CHAIN = ["gemini-2.0-flash-lite", "gemini-2.0-flash"]
@@ -1123,14 +1184,14 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
     try:
         with ThreadPoolExecutor(max_workers=2) as ex:
             claude_fut = ex.submit(_analyze_with_claude, titles_text, schedule_text, market)
-            gemini_fut = ex.submit(_analyze_with_gemini, titles_text, schedule_text, market)
+            groq_fut = ex.submit(_analyze_with_groq, titles_text, schedule_text, market)
         claude_result = claude_fut.result()
-        gemini_result = gemini_fut.result()
+        groq_result = groq_fut.result()
 
-        if claude_result and gemini_result:
-            result = _cross_validate(claude_result, gemini_result)
+        if claude_result and groq_result:
+            result = _cross_validate(claude_result, groq_result)
             result["aiMethod"] = "dual"
-            print("[분석] Claude × Gemini 교차검증 완료")
+            print("[분석] Claude × Groq 교차검증 완료")
         elif claude_result:
             result = claude_result
             for item in result.get("items", []):
@@ -1142,6 +1203,10 @@ def analyze_news_batch(news_list: list[dict], market: str = "kr") -> dict:
                     })
             result["aiMethod"] = "claude_only"
             print("[분석] Claude 단독 분석 완료")
+        elif groq_result:
+            result = groq_result
+            result["aiMethod"] = "groq_only"
+            print("[분석] Groq 단독 분석 완료 (Claude 한도 초과)")
         else:
             result = fallback
             print("[분석] 모든 AI 분석 실패 - 폴백 사용")

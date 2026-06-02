@@ -858,9 +858,11 @@
 
     function dualAiIndicator(aiMethod) {
         if (aiMethod === "dual")
-            return `<div class="dual-ai-indicator active">🤖 Claude × ✨ Gemini 교차검증 완료</div>`;
+            return `<div class="dual-ai-indicator active">🤖 Claude × ⚡ Groq 교차검증 완료</div>`;
+        if (aiMethod === "groq_only")
+            return `<div class="dual-ai-indicator" style="opacity:.8">⚡ Groq 단독 분석 (Claude 한도 초과)</div>`;
         if (aiMethod === "claude_only")
-            return `<div class="dual-ai-indicator" style="opacity:.55">🤖 Claude 단독 분석 (Gemini 대기 중)</div>`;
+            return `<div class="dual-ai-indicator" style="opacity:.55">🤖 Claude 단독 분석</div>`;
         return "";
     }
 

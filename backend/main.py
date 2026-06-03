@@ -970,9 +970,9 @@ def _analyze_with_groq(titles_text: str, schedule_text: str, market: str = "kr")
             result = _parse_and_filter_analysis(text, [], market)
             if result:
                 print(f"[Groq:{model.split('-')[0]}] {market.upper()} 분석 완료")
-            else:
-                print(f"[Groq:{model.split('-')[0]}] {market.upper()} 파싱 실패 | 응답 앞부분: {text[:200]}")
-            return result
+                return result
+            print(f"[Groq:{model.split('-')[0]}] {market.upper()} 파싱 실패 → 다음 모델 시도 | {text[:150]}")
+            continue
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "rate" in err_str.lower():
@@ -1071,7 +1071,9 @@ def _analyze_with_openrouter(titles_text: str, schedule_text: str, market: str =
             result = _parse_and_filter_analysis(text, [], market)
             if result:
                 print(f"[OpenRouter:{model.split('/')[1][:20]}] {market.upper()} 분석 완료")
-            return result
+                return result
+            print(f"[OpenRouter:{model.split('/')[1][:20]}] {market.upper()} 파싱 실패 → 다음 모델 시도 | {text[:150]}")
+            continue
         except Exception as e:
             err_str = str(e)
             if "429" in err_str:

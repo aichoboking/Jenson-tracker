@@ -1034,8 +1034,8 @@ def _analyze_with_gemini(titles_text: str, schedule_text: str, market: str = "kr
 import requests as _requests
 
 _OPENROUTER_MODEL_CHAIN = [
-    "qwen/qwen-2.5-72b-instruct:free",   # 한국어 강함
     "meta-llama/llama-3.3-70b-instruct:free",
+    "mistralai/mistral-7b-instruct:free",
 ]
 
 def _analyze_with_openrouter(titles_text: str, schedule_text: str, market: str = "kr") -> dict | None:
@@ -1047,11 +1047,18 @@ def _analyze_with_openrouter(titles_text: str, schedule_text: str, market: str =
         f"[Today's US News]\n{titles_text}" if market == "us"
         else f"{schedule_text}\n\n[오늘의 뉴스 목록]\n{titles_text}"
     )
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://jenson-tracker-production.up.railway.app",
+        "X-Title": "Jensen Tracker",
+    }
     for model in _OPENROUTER_MODEL_CHAIN:
+        short = model.split("/")[-1][:25]
         try:
             resp = _requests.post(
                 "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                headers=headers,
                 json={
                     "model": model,
                     "messages": [
@@ -1063,21 +1070,21 @@ def _analyze_with_openrouter(titles_text: str, schedule_text: str, market: str =
                 },
                 timeout=30,
             )
-            if resp.status_code == 429:
-                print(f"[OpenRouter:{model.split('/')[1][:20]}] 속도 제한 → 다음 모델 시도")
+            if resp.status_code in (429, 404):
+                print(f"[OpenRouter:{short}] {resp.status_code} → 다음 모델 시도")
                 continue
             resp.raise_for_status()
             text = resp.json()["choices"][0]["message"]["content"].strip()
             result = _parse_and_filter_analysis(text, [], market)
             if result:
-                print(f"[OpenRouter:{model.split('/')[1][:20]}] {market.upper()} 분석 완료")
+                print(f"[OpenRouter:{short}] {market.upper()} 분석 완료")
                 return result
-            print(f"[OpenRouter:{model.split('/')[1][:20]}] {market.upper()} 파싱 실패 → 다음 모델 시도 | {text[:150]}")
+            print(f"[OpenRouter:{short}] {market.upper()} 파싱 실패 → 다음 모델 시도 | {text[:150]}")
             continue
         except Exception as e:
             err_str = str(e)
-            if "429" in err_str:
-                print(f"[OpenRouter:{model}] 속도 제한 → 다음 모델 시도")
+            if "429" in err_str or "404" in err_str:
+                print(f"[OpenRouter:{short}] 에러 → 다음 모델 시도")
                 continue
             print(f"[OpenRouter 분석 에러] {e}")
             return None

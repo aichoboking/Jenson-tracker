@@ -761,11 +761,19 @@
         const schedSec = document.querySelector(".schedule-section");
         if (schedSec) schedSec.style.display = market === "kr" ? "" : "none";
 
-        // 피드 페이드 후 로드
+        // 피드 페이드 후 새 마켓 데이터 즉시 표시
         const fc = document.getElementById("feedContainer");
         fc.classList.add("fading");
         setTimeout(() => {
             fc.classList.remove("fading");
+            hideStaleBanner();
+            if (lastGoodData[market]) {
+                if (market === "kr") renderSchedule(lastGoodData[market]);
+                renderWeather(lastGoodData[market]);
+                renderFeeds(lastGoodData[market]);
+            } else {
+                renderLoading();
+            }
             loadFeeds(true);
         }, 200);
     }
@@ -1216,8 +1224,15 @@
         btn.classList.add("loading");
         btn.textContent = "⏳ 분석 중...";
 
-        // stale-while-revalidate: 이전 데이터 있으면 스켈레톤 없이 유지
-        if (!lastGoodData[currentMarket]) renderLoading();
+        // 탭 전환 포함, 항상 현재 마켓 데이터를 즉시 표시
+        if (lastGoodData[currentMarket]) {
+            const stale = lastGoodData[currentMarket];
+            if (currentMarket === "kr") renderSchedule(stale);
+            renderWeather(stale);
+            renderFeeds(stale);
+        } else {
+            renderLoading();
+        }
 
         try {
             const ts  = force ? `t=${Date.now()}&` : "";
@@ -1227,17 +1242,8 @@
             const data = await res.json();
 
             if (data.aiMethod === "fallback") {
-                if (lastGoodData[currentMarket]) {
-                    // 이전 데이터 보여주고 배너 + 자동 재시도
-                    const stale = lastGoodData[currentMarket];
-                    if (currentMarket === "kr") renderSchedule(stale);
-                    renderWeather(stale);
-                    renderFeeds(stale);
-                    showStaleBanner();
-                } else {
-                    // 처음 접속인데 fallback → 로딩 화면 유지
-                    renderLoading();
-                }
+                if (!lastGoodData[currentMarket]) renderLoading();
+                showStaleBanner();
                 scheduleRetry();
             } else {
                 clearRetry();
@@ -1248,12 +1254,9 @@
                 renderFeeds(data);
             }
         } catch (e) {
-            if (lastGoodData[currentMarket]) {
-                showStaleBanner();
-                scheduleRetry();
-            } else {
-                renderError(e.message);
-            }
+            if (!lastGoodData[currentMarket]) renderError(e.message);
+            else showStaleBanner();
+            scheduleRetry();
         } finally {
             busy = false;
             btn.classList.remove("loading");

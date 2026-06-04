@@ -890,14 +890,12 @@ def get_us_stock_change(ticker: str) -> str:
         return cached["change"]
     change = "N/A"
     try:
-        hist = yf.Ticker(ticker).history(period="5d")
-        hist = hist.dropna(subset=["Close"])
-        if len(hist) >= 2:
-            prev = float(hist["Close"].iloc[-2])
-            curr = float(hist["Close"].iloc[-1])
-            if prev > 0 and not math.isnan(prev) and not math.isnan(curr):
-                pct = (curr - prev) / prev * 100
-                change = f"{pct:+.2f}% (종가)"
+        info = yf.Ticker(ticker).fast_info
+        curr = float(info.last_price)
+        prev = float(info.previous_close)
+        if prev > 0 and not math.isnan(prev) and not math.isnan(curr):
+            pct = (curr - prev) / prev * 100
+            change = f"{pct:+.2f}%"
     except Exception:
         pass
     _stock_cache[f"us_{ticker}"] = {"change": change, "ts": time.time()}
@@ -1354,15 +1352,13 @@ def get_stock_change(code: str) -> str:
     change = "N/A"
     for suffix in [".KS", ".KQ"]:
         try:
-            hist = yf.Ticker(f"{code}{suffix}").history(period="5d")
-            hist = hist.dropna(subset=["Close"])
-            if len(hist) >= 2:
-                prev = float(hist["Close"].iloc[-2])
-                curr = float(hist["Close"].iloc[-1])
-                if prev > 0 and not math.isnan(prev) and not math.isnan(curr):
-                    pct = (curr - prev) / prev * 100
-                    change = f"{pct:+.2f}% (종가)"
-                    break
+            info = yf.Ticker(f"{code}{suffix}").fast_info
+            curr = float(info.last_price)
+            prev = float(info.previous_close)
+            if prev > 0 and not math.isnan(prev) and not math.isnan(curr):
+                pct = (curr - prev) / prev * 100
+                change = f"{pct:+.2f}%"
+                break
         except Exception:
             continue
 
